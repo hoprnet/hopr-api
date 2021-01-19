@@ -16,5 +16,11 @@
   "bugs": {
     "url": "https://github.com/hoprnet/hopr-api/issues"
   },
-  "homepage": "https://github.com/hoprnet/hopr-api#readme"
+  "homepage": "https://github.com/hoprnet/hopr-api#readme",
+  "dependencies": {
+    "@hoprnet/hopr-core-ethereum": "^1.61.26",
+    "@hoprnet/hopr-utils": "^1.61.26",
+    "abort-controller": "^3.0.0",
+    "fast-csv": "^4.3.6"
+  }
 }
