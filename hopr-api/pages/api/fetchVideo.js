@@ -3,7 +3,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 
 dayjs.extend(isSameOrAfter)
 
-import { citiesMap } from '../constants';
+import { citiesMap } from '../../utils/constants';
 
 export default async function handler(req, res) {
   const {

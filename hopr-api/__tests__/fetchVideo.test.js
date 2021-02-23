@@ -1,6 +1,6 @@
 import { createMocks } from 'node-mocks-http';
 import fetchVideo from '../pages/api/fetchVideo';
-import { citiesMap, citiesDict } from '../pages/constants';
+import { citiesMap, citiesDict } from '../utils/constants';
 
 describe('/api/fetchVideo', () => {
   test('Starts in TOKYO timezone', async () => {
