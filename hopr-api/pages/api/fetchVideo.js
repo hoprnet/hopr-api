@@ -20,6 +20,6 @@ export default async function handler(req, res) {
   const cityObject = getCurrentCityFromTimestamp(now)
 
   const city = cityObject.env
-  const url = process.env[`VIMEO_URL_${city}`]
+  const url = process.env[`VIMEO_URL_${city}`] || `No VIMEO_URL_${city} provided`
   res.status(200).json({ url, city, now })
 }
