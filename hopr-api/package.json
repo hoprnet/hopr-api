@@ -4,15 +4,22 @@
   "scripts": {
     "dev": "next",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "jest"
   },
   "dependencies": {
-    "@hoprnet/hopr-core-ethereum": "^1.64.0-next.0",
-    "@hoprnet/hopr-utils": "^1.64.0-next.0",
+    "@hoprnet/hopr-core-ethereum": "1.69.3",
+    "@hoprnet/hopr-utils": "1.69.3",
+    "dayjs": "^1.10.4",
     "next": "latest",
     "react": "^16.8.6",
     "react-dom": "^16.8.6",
     "swr": "0.1.18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/plugin-transform-modules-commonjs": "^7.13.0",
+    "jest": "^26.6.3",
+    "node-mocks-http": "^1.10.1"
+  }
 }
