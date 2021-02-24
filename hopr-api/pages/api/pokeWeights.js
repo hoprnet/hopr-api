@@ -25,7 +25,7 @@ export default async function handler(req, res) {
 
     const overrides = {
       gasPrice,
-      gasLimit: 100000
+      gasLimit: 150000
     };
 
     const tx = await balancerContract.pokeWeights(overrides);
