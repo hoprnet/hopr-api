@@ -1,11 +1,26 @@
+import Cors from 'cors'
 import dayjs from 'dayjs'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
-
-dayjs.extend(isSameOrAfter)
+import initMiddleware from '../../lib/init-middleware'
 
 import { citiesMap } from '../../utils/constants';
 
+
+// Initialize the cors middleware
+const cors = initMiddleware(
+  // You can read more about the available options here: https://github.com/expressjs/cors#configuration-options
+  Cors({
+    // Only allow requests with GET and OPTIONS
+    methods: ['GET', 'OPTIONS'],
+  })
+)
+
+dayjs.extend(isSameOrAfter)
+
 export default async function handler(req, res) {
+  // Run cors
+  await cors(req, res)
+
   const {
     query: { timestamp, debug },
   } = req;
