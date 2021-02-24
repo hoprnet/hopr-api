@@ -10,6 +10,7 @@
   "dependencies": {
     "@hoprnet/hopr-core-ethereum": "1.69.3",
     "@hoprnet/hopr-utils": "1.69.3",
+    "cors": "^2.8.5",
     "dayjs": "^1.10.4",
     "next": "latest",
     "react": "^16.8.6",
