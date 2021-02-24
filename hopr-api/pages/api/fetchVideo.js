@@ -7,13 +7,12 @@ import { citiesMap } from '../../utils/constants';
 
 export default async function handler(req, res) {
   const {
-    query: { timestamp },
+    query: { timestamp, debug },
   } = req;
 
-  const now = (timestamp ?
-    process.env.NODE_ENV === 'production' ?
-        new Date().getTime() :
-        new Date(timestamp) : new Date()).getTime()
+  const now = (process.env.NODE_ENV === 'production' && debug !== process.env.SECRET_DEBUG) ?
+    new Date().getTime() :
+      timestamp ? new Date(+timestamp).getTime() : new Date().getTime()
 
   const getCurrentCityFromTimestamp = (dateTimestamp) => {
     const citiesAfter = citiesMap.filter( city => dayjs(dateTimestamp).isSameOrAfter(city.date) )
