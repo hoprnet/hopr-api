@@ -80,9 +80,9 @@ export const citiesMap = [
     video: '',
   },
   {
-    date: 'Feb 24, 2021 12:00:00 UTC-09:00',
+    date: 'Feb 24, 2021 8:00:00 UTC-09:00',
     destination: 'San Francisco, USA',
-    hour: '12:00 UTC-9',
+    hour: '8:00 UTC-9',
     env: 'SAN_FRANCISCO',
     ht: 'SF',
     video: '',
