@@ -1,5 +1,13 @@
 export const citiesMap = [
   {
+    date: 'Feb 24, 2021 15:59:59 UTC+09:00',
+    destination: 'Unknown, ??',
+    hour: '16:00 UTC+9',
+    env: 'UNKNOWN',
+    ht: 'Unknown',
+    video: '',
+  },
+  {
     date: 'Feb 24, 2021 16:00:00 UTC+09:00',
     destination: 'Tokyo, JP',
     hour: '16:00 UTC+9',

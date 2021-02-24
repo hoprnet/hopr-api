@@ -37,6 +37,6 @@ export default async function handler(req, res) {
   const cityObject = getCurrentCityFromTimestamp(now)
 
   const city = cityObject.env
-  const url = process.env[`VIMEO_URL_${city}`] || `https://vimeo.com/513096293`
+  const url = process.env[`VIMEO_URL_${city}`] || `https://vimeo.com/513101933`
   res.status(200).json({ url, city, now })
 }
