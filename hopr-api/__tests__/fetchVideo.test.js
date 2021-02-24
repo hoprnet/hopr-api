@@ -3,9 +3,25 @@ import fetchVideo from '../pages/api/fetchVideo';
 import { citiesMap, citiesDict } from '../utils/constants';
 
 describe('/api/fetchVideo', () => {
-  test('Starts in TOKYO timezone', async () => {
+  test('Starts in UNKNOWN timezone', async () => {
     const { req, res } = createMocks({
       method: 'GET',
+    });
+    await fetchVideo(req, res);
+    expect(res._getStatusCode()).toBe(200);
+    expect(JSON.parse(res._getData())).toEqual(
+      expect.objectContaining({
+        city: 'UNKNOWN',
+      }),
+    );
+  });
+
+  test('TOKYO timezone', async () => {
+    const { req, res } = createMocks({
+      method: 'GET',
+      query: {
+        timestamp: new Date(citiesDict['UNKNOWN'].date).getTime() + 1000,
+      }
     });
     await fetchVideo(req, res);
     expect(res._getStatusCode()).toBe(200);
@@ -36,7 +52,7 @@ describe('/api/fetchVideo', () => {
     const { req, res } = createMocks({
       method: 'GET',
       query: {
-        timestamp: (new Date(citiesDict['MADRID'].date).getTime()) - 1,
+        timestamp: (new Date(citiesDict['MADRID'].date).getTime()) - 1000,
       }
     });
     await fetchVideo(req, res);
@@ -52,7 +68,7 @@ describe('/api/fetchVideo', () => {
     const { req, res } = createMocks({
       method: 'GET',
       query: {
-        timestamp: (new Date(citiesDict['ZURICH'].date).getTime()) + 1,
+        timestamp: (new Date(citiesDict['ZURICH'].date).getTime()) + 1000,
       }
     });
     await fetchVideo(req, res);
@@ -100,7 +116,7 @@ describe('/api/fetchVideo', () => {
     const { req, res } = createMocks({
       method: 'GET',
       query: {
-        timestamp: (new Date(citiesDict['ZURICH'].date).getTime()) - 1*60*60*1000 - 1,
+        timestamp: (new Date(citiesDict['ZURICH'].date).getTime()) - 1*60*60*1000 - 1000,
       }
     });
     await fetchVideo(req, res);
