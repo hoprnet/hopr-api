@@ -22,6 +22,10 @@ network = []
 graph = ["dep:auto_impl"]
 node = ["chain", "db", "graph", "network", "dep:atomic_enum"]
 serde = ["hopr-types/serde"]
+random = ["hopr-types/random"]
+rayon = ["hopr-types/rayon"]
+telemetry = ["hopr-types/telemetry"]
+fixed-rng = ["hopr-types/fixed-rng"]
 
 [dependencies]
 async-trait = { workspace = true }

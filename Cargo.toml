@@ -31,7 +31,6 @@ thiserror = "2.0.18"
 tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
 
 hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "main" }
-hopr-crypto-packet = { git = "https://github.com/hoprnet/hoprnet", branch = "main", default-features = false }
 
 # dev-dependencies
 insta = { version = "1.46.3", features = ["json", "yaml", "redactions"] }
