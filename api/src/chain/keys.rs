@@ -1,7 +1,5 @@
 use std::error::Error;
 
-// TODO: Replace with abstracted types once hopr-crypto-packet is decoupled.
-pub use hopr_crypto_packet::{HoprKeyIdent, HoprSphinxHeaderSpec, HoprSphinxSuite, KeyIdMapper};
 use hopr_types::{crypto::prelude::OffchainPublicKey, primitive::prelude::Address};
 
 /// Operations for offchain keys.

@@ -2,9 +2,7 @@
 
 resolver = "2"
 
-members = [
-  "api",
-]
+members = ["api"]
 
 [workspace.package]
 rust-version = "1.91"

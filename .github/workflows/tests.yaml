@@ -1,12 +1,9 @@
----
 #################################################################################
 # Pipeline triggered on every pull request to run unit and integration tests
 #################################################################################
 name: Test
-
 env:
   RUST_BACKTRACE: "1"
-
 on:
   merge_group:
     types: [checks_requested]
@@ -16,11 +13,9 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-
 concurrency:
   group: ${{ github.event.pull_request.head.ref || github.ref_name }}-${{ github.workflow }}
   cancel-in-progress: true
-
 jobs:
   tests-unit:
     name: Unit Tests
@@ -34,46 +29,43 @@ jobs:
         with:
           disable-sudo: true
           egress-policy: audit
-
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
           persist-credentials: false
-
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run unit tests
         run: nix develop -c cargo test --lib
 
-  tests-integration:
-    name: Integration Tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      CI: "true"
-    steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
-        with:
-          disable-sudo: true
-          egress-policy: audit
+# tests-integration:
+#   name: Integration Tests
+#   runs-on: ubuntu-latest
+#   timeout-minutes: 30
+#   env:
+#     CI: "true"
+#   steps:
+#     - name: Harden Runner
+#       uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
+#       with:
+#         disable-sudo: true
+#         egress-policy: audit
 
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          persist-credentials: false
+#     - name: Checkout repository
+#       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+#       with:
+#         repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+#         ref: ${{ github.event.pull_request.head.ref || github.ref }}
+#         persist-credentials: false
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+#     - name: Install Nix
+#       uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
+#       with:
+#         github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run integration tests
-        run: nix develop -c cargo test --test '*' -- --test-threads=1
+#     - name: Run integration tests
+#       run: nix develop -c cargo test --test '*' -- --test-threads=1

@@ -110,11 +110,9 @@
             cargoToml = ./api/Cargo.toml;
           };
 
-          hopr-api-clippy = rust-builder-local.callPackage nixLib.mkRustPackage (
-            buildArgs // { runClippy = true; }
-          );
+          clippy = rust-builder-local.callPackage nixLib.mkRustPackage (buildArgs // { runClippy = true; });
 
-          hopr-api-test-unit = rust-builder-local.callPackage nixLib.mkRustPackage (
+          test-unit = rust-builder-local.callPackage nixLib.mkRustPackage (
             buildArgs
             // {
               src = testSrc;
@@ -251,7 +249,7 @@
             };
           };
 
-          checks = { inherit hopr-api-clippy; };
+          checks = { inherit clippy; };
 
           apps = {
             check = run-check;
@@ -259,7 +257,7 @@
           };
 
           packages = {
-            inherit hopr-api-test-unit;
+            inherit test-unit;
             inherit pre-commit-check;
           };
 

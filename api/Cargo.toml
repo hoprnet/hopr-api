@@ -14,18 +14,30 @@ crate-type = ["rlib"]
 
 [features]
 default = []
-full = ["chain", "ct", "db", "network", "graph", "node", "serde"]
-chain = ["db", "dep:auto_impl"]
+full = [
+  "chain",
+  "ct",
+  "db",
+  "network",
+  "graph",
+  "node",
+  "serde",
+  "types-internal",
+  "types-chain",
+  "types-random",
+  "types-fixed-rng",
+]
+chain = ["db", "types-chain", "dep:auto_impl"]
 ct = []
 db = []
 network = []
 graph = ["dep:auto_impl"]
 node = ["chain", "db", "graph", "network", "dep:atomic_enum"]
 serde = ["hopr-types/serde"]
-random = ["hopr-types/random"]
-rayon = ["hopr-types/rayon"]
-telemetry = ["hopr-types/telemetry"]
-fixed-rng = ["hopr-types/fixed-rng"]
+types-random = ["hopr-types/random"]
+types-fixed-rng = ["hopr-types/fixed-rng"]
+types-chain = ["hopr-types/chain"]
+types-internal = ["hopr-types/internal"]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -39,14 +51,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
-hopr-types = { workspace = true, features = [
-  "crypto",
-  "chain",
-  "internal",
-  "primitive",
-] }
-# TODO: Abstract away once crypto types are decoupled
-hopr-crypto-packet = { workspace = true }
+hopr-types = { workspace = true, features = ["crypto", "primitive", "rayon"] }
 
 [dev-dependencies]
 insta = { workspace = true }

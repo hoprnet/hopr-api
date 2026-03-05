@@ -1,5 +1,5 @@
 pub use hopr_types::{internal::routing::PathId, primitive::bounded::BoundedVec};
-pub use multiaddr::PeerId;
+pub use libp2p_identity::PeerId;
 
 /// Network health represented with colors, where green is the best and red
 /// is the worst possible observed network quality.

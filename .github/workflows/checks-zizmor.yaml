@@ -1,6 +1,4 @@
----
 name: Zizmor
-
 on:
   merge_group:
     types: [checks_requested]
@@ -12,13 +10,10 @@ on:
       source_branch:
         required: true
         type: string
-
 concurrency:
   group: ${{ inputs.source_branch || github.ref_name }}-zizmor
   cancel-in-progress: true
-
 permissions: {}
-
 jobs:
   zizmor:
     name: Zizmor
@@ -32,24 +27,20 @@ jobs:
         with:
           disable-sudo: true
           egress-policy: audit
-
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
           repository: ${{ inputs.source_repo }}
           ref: ${{ inputs.source_branch }}
-
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Run zizmor
         run: nix develop -L .#ci -c bash -c "zizmor --format sarif . > results.sarif"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload SARIF file
         uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
         with:
