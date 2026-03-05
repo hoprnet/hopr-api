@@ -32,8 +32,8 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-          repository: ${{ inputs.source_repo }}
-          ref: ${{ inputs.source_branch }}
+          repository: ${{ inputs.source_repo || github.repository }}
+          ref: ${{ inputs.source_branch || github.ref }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
