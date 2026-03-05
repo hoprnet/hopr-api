@@ -17,6 +17,8 @@ pub mod network;
 #[cfg(feature = "node")]
 pub mod node;
 
+pub use hopr_types as types;
+
 pub use hopr_types::{
     crypto::prelude::{OffchainKeypair, OffchainPublicKey},
     primitive::prelude::Address,
