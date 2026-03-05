@@ -2,8 +2,8 @@
 /target/
 **/*.rs.bk
 
-# Cargo lock for libraries (optional — keep or ignore as preferred)
-# Cargo.lock
+# Cargo lock for libraries
+Cargo.lock
 
 # Nix
 /result

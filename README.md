@@ -1,4 +1,4 @@
-# hopr-lib API
+# hopr-api
 
 Common high-level API traits for the [HOPR protocol](https://hoprnet.org/).
 

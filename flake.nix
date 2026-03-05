@@ -1,5 +1,5 @@
 {
-  description = "hopr-lib API — common high-level API traits for the HOPR protocol";
+  description = "hopr-api — common high-level API traits for the HOPR protocol";
 
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";

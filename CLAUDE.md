@@ -1,4 +1,4 @@
-# hopr-lib API — Claude Configuration
+# hopr-api — Claude Configuration
 
 Read `.claude/INSTRUCTIONS.md` for full development guidelines, coding standards, and project conventions.
 

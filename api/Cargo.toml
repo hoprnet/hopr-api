@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "0.12.0"
+version = "1.0.0"
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -50,7 +50,12 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
-hopr-types = { workspace = true, features = ["crypto", "internal", "primitive", "rayon"] }
+hopr-types = { workspace = true, features = [
+  "crypto",
+  "internal",
+  "primitive",
+  "rayon",
+] }
 
 [dev-dependencies]
 insta = { workspace = true }
