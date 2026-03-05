@@ -22,14 +22,13 @@ full = [
   "graph",
   "node",
   "serde",
-  "types-internal",
   "types-chain",
   "types-random",
   "types-fixed-rng",
 ]
 chain = ["db", "types-chain", "dep:auto_impl"]
 ct = []
-db = []
+db = ["dep:auto_impl"]
 network = []
 graph = ["dep:auto_impl"]
 node = ["chain", "db", "graph", "network", "dep:atomic_enum"]
@@ -51,7 +50,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
-hopr-types = { workspace = true, features = ["crypto", "primitive", "rayon"] }
+hopr-types = { workspace = true, features = ["crypto", "internal", "primitive", "rayon"] }
 
 [dev-dependencies]
 insta = { workspace = true }
