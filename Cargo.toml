@@ -1,0 +1,47 @@
+[workspace]
+
+resolver = "2"
+
+members = ["api"]
+
+[workspace.package]
+rust-version = "1.91"
+authors = ["HOPR Association <tech@hoprnet.org>"]
+edition = "2024"
+
+[workspace.dependencies]
+async-trait = "0.1.89"
+atomic_enum = "0.3.0"
+auto_impl = "1.3.0"
+chrono = { version = "0.4.44", default-features = false, features = [
+  "std",
+  "clock",
+] }
+futures = "0.3.32"
+libp2p-identity = { version = "0.2.13", features = [
+  "peerid",
+  "ed25519",
+  "rand",
+] }
+multiaddr = "0.18.2"
+strum = { version = "0.28.0", features = ["derive"] }
+thiserror = "2.0.18"
+tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
+
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "main" }
+
+# dev-dependencies
+insta = { version = "1.46.3", features = ["json", "yaml", "redactions"] }
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+# make insta snapshots faster
+[profile.dev.package]
+insta.opt-level = 3

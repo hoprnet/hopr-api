@@ -1,0 +1,29 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Cargo lock for libraries
+Cargo.lock
+
+# Nix
+/result
+/result-*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# direnv
+.direnv/
+.envrc
+
+# Python (if any tooling)
+__pycache__/
+*.pyc
+.venv/

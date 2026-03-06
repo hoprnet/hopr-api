@@ -1,0 +1,61 @@
+[package]
+name = "hopr-api"
+version = "1.0.0"
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Common high-level API traits used by hopr-lib to implement the HOPR protocol"
+homepage = "https://hoprnet.org/"
+repository = "https://github.com/hoprnet/hopr-api"
+license = "GPL-3.0-only"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+full = [
+  "chain",
+  "ct",
+  "db",
+  "network",
+  "graph",
+  "node",
+  "serde",
+  "types-chain",
+  "types-random",
+  "types-fixed-rng",
+]
+chain = ["db", "types-chain", "dep:auto_impl"]
+ct = []
+db = ["dep:auto_impl"]
+network = []
+graph = ["dep:auto_impl"]
+node = ["chain", "db", "graph", "network", "dep:atomic_enum"]
+serde = ["hopr-types/serde"]
+types-random = ["hopr-types/random"]
+types-fixed-rng = ["hopr-types/fixed-rng"]
+types-chain = ["hopr-types/chain"]
+types-internal = ["hopr-types/internal"]
+
+[dependencies]
+async-trait = { workspace = true }
+auto_impl = { workspace = true, optional = true }
+atomic_enum = { workspace = true, optional = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+libp2p-identity = { workspace = true }
+multiaddr = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+hopr-types = { workspace = true, features = [
+  "crypto",
+  "internal",
+  "primitive",
+  "rayon",
+] }
+
+[dev-dependencies]
+insta = { workspace = true }
