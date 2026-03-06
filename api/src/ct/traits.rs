@@ -13,7 +13,7 @@ pub enum ProbeRouting {
     Looping((DestinationRouting, PathId)),
 }
 
-/// A trait for types that can produce a stream of cover traffic routes.
+/// A trait for types that can produce a stream of probing traffic routes.
 ///
 /// The basic assumption is that the implementor will provide the logic
 /// to choose suitable route candidates for cover traffic based on a

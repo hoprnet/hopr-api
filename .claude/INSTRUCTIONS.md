@@ -52,7 +52,7 @@ cargo test --test '*' -- --test-threads=1   # Integration tests (MUST be single-
 
 ### Workspace Structure
 
-```
+```text
 api/          - The hopr-api trait library
   ├─ chain/   - On-chain operation traits (accounts, channels, tickets, Safe, keys)
   ├─ ct/      - Cover traffic & probing traits

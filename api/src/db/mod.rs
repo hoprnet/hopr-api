@@ -8,7 +8,7 @@ pub type DbTimestamp = chrono::DateTime<chrono::Utc>;
 /// Complete set of HOPR node database APIs.
 ///
 /// This trait is automatically implemented for types
-/// that implement all the individual chain API traits to be implemented with the same error.
+/// that implement all the individual database API traits with the same error type.
 pub trait HoprNodeDbApi: HoprDbTicketOperations<Error = Self::NodeDbError> {
     type NodeDbError: std::error::Error + Send + Sync + 'static;
 }

@@ -30,7 +30,7 @@ pub trait ChainEvents {
     /// Subscribe to on-chain events.
     ///
     /// The [`options`](StateSyncOptions) specify which parts of the current state should be streamed
-    /// in the form on [`ChainEvents`](ChainEvent) before any future events are streamed.
+    /// in the form of [`ChainEvent`] values before any future events are streamed.
     ///
     /// When an empty iterator (or simply `None`) is specified, only all future events are streamed from this point.
     fn subscribe_with_state_sync<I: IntoIterator<Item = StateSyncOptions>>(
