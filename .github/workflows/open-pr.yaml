@@ -17,7 +17,7 @@ concurrency:
 jobs:
   validate-pr-title:
     name: PR / Validate title
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-hoprnet-small
     permissions:
       pull-requests: read
     steps:
@@ -45,7 +45,7 @@ jobs:
             ignore-semantic-pull-request
   label:
     name: PR / Add labels
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-hoprnet-small
     permissions:
       contents: read
       issues: write

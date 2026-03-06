@@ -20,7 +20,7 @@ permissions:
 jobs:
   detect-unused-dependencies:
     name: Redundant cargo dependencies
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-hoprnet-bigger
     timeout-minutes: 10
     steps:
       - name: Harden Runner
