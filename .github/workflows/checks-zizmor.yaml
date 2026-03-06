@@ -17,7 +17,7 @@ permissions: {}
 jobs:
   zizmor:
     name: Zizmor
-    runs-on: ubuntu-latest
+    runs-on: self-hosted-hoprnet-bigger
     permissions:
       contents: read
       security-events: write
