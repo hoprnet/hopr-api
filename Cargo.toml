@@ -17,7 +17,10 @@ chrono = { version = "0.4.44", default-features = false, features = [
   "std",
   "clock",
 ] }
-futures = "0.3.32"
+futures = { version = "0.3.32", default-features = false, features = [
+  "std",
+  "async-await",
+] }
 libp2p-identity = { version = "0.2.13", features = [
   "peerid",
   "ed25519",
@@ -26,7 +29,10 @@ libp2p-identity = { version = "0.2.13", features = [
 multiaddr = "0.18.2"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
-tracing = { version = "0.1.44", features = ["release_max_level_debug"] }
+tracing = { version = "0.1.44", default-features = false, features = [
+  "std",
+  "release_max_level_debug",
+] }
 
 hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "main" }
 
