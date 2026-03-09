@@ -1,13 +1,39 @@
 use std::fmt::Formatter;
 
 use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
-use hopr_types::internal::prelude::AcknowledgedTicketStatus;
 pub use hopr_types::internal::prelude::{RedeemableTicket, VerifiedTicket};
+use hopr_types::{
+    internal::prelude::{AcknowledgedTicketStatus, WinningProbability},
+    primitive::balance::HoprBalance,
+};
 
 use crate::{
     chain::ChainReceipt,
     db::{HoprDbTicketOperations, TicketMarker, TicketSelector},
 };
+
+/// On-chain operations to read values related to tickets.
+///
+/// These operations are used in critical packet processing pipelines, and therefore,
+/// should not query the chain information directly, and they MUST NOT block.
+#[auto_impl::auto_impl(&, Box, Arc)]
+pub trait ChainReadTicketOperations {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Retrieves the winning probability and ticket price for **outgoing** tickets,
+    /// with respect to the optionally pre-configured values.
+    ///
+    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
+    fn outgoing_ticket_values(
+        &self,
+        configured_wp: Option<WinningProbability>,
+        configured_price: Option<HoprBalance>,
+    ) -> Result<(WinningProbability, HoprBalance), Self::Error>;
+    /// Retrieves the expected minimum winning probability and ticket price for **incoming** tickets.
+    ///
+    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
+    fn incoming_ticket_values(&self) -> Result<(WinningProbability, HoprBalance), Self::Error>;
+}
 
 /// Result of [`redeem_tickets_via_selector`].
 ///
