@@ -126,10 +126,7 @@ pub trait ChainReadChannelOperations {
     fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, Self::Error>;
 
     /// Returns a stream of channels given the [`ChannelSelector`].
-    fn stream_channels<'a>(
-        &'a self,
-        selector: ChannelSelector,
-    ) -> Result<BoxStream<'a, ChannelEntry>, Self::Error>;
+    fn stream_channels<'a>(&'a self, selector: ChannelSelector) -> Result<BoxStream<'a, ChannelEntry>, Self::Error>;
 }
 
 /// On-chain write operations regarding channels.

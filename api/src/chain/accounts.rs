@@ -140,10 +140,7 @@ pub trait ChainReadAccountOperations {
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Returns on-chain node accounts with the given [`AccountSelector`].
-    fn stream_accounts<'a>(
-        &'a self,
-        selector: AccountSelector,
-    ) -> Result<BoxStream<'a, AccountEntry>, Self::Error>;
+    fn stream_accounts<'a>(&'a self, selector: AccountSelector) -> Result<BoxStream<'a, AccountEntry>, Self::Error>;
 
     /// Counts the accounts with the given [`AccountSelector`].
     ///
