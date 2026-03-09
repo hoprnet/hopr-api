@@ -43,6 +43,10 @@ pub trait ChainValues {
     async fn balance<C: Currency, A: Into<Address> + Send>(&self, address: A) -> Result<Balance<C>, Self::Error>;
     /// Retrieves the domain separators of HOPR smart contracts.
     async fn domain_separators(&self) -> Result<DomainSeparators, Self::Error>;
+    /// Retrieves the network-set minimum **incoming** ticket winning probability.
+    async fn minimum_incoming_ticket_win_prob(&self) -> Result<WinningProbability, Self::Error>;
+    /// Retrieves the network-set minimum ticket price.
+    async fn minimum_ticket_price(&self) -> Result<HoprBalance, Self::Error>;
     /// Retrieves the current key binding fee
     /// used for new key-binding [announcements](crate::chain::ChainWriteAccountOperations::announce).
     async fn key_binding_fee(&self) -> Result<HoprBalance, Self::Error>;

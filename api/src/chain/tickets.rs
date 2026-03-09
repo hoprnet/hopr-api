@@ -13,6 +13,9 @@ use crate::{
 };
 
 /// On-chain operations to read values related to tickets.
+///
+/// These operations are used in critical packet processing pipelines, and therefore,
+/// should not query the chain information directly, and they MUST NOT block.
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait ChainReadTicketOperations {
     type Error: std::error::Error + Send + Sync + 'static;
@@ -26,15 +29,10 @@ pub trait ChainReadTicketOperations {
         configured_wp: Option<WinningProbability>,
         configured_price: Option<HoprBalance>,
     ) -> Result<(WinningProbability, HoprBalance), Self::Error>;
-    /// Retrieves the expected minimum winning probability and ticket price for **incoming** tickets,
-    /// with respect to the optionally pre-configured values.
+    /// Retrieves the expected minimum winning probability and ticket price for **incoming** tickets.
     ///
     /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
-    fn incoming_ticket_values(
-        &self,
-        configured_min_wp: Option<WinningProbability>,
-        configured_min_price: Option<HoprBalance>,
-    ) -> Result<(WinningProbability, HoprBalance), Self::Error>;
+    fn incoming_ticket_values(&self) -> Result<(WinningProbability, HoprBalance), Self::Error>;
 }
 
 /// Result of [`redeem_tickets_via_selector`].

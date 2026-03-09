@@ -62,16 +62,14 @@ where
 /// This trait is automatically implemented for types
 /// that implement all the individual chain API traits with the same error.
 pub trait HoprStaticChainApi:
-    ChainReadSafeOperations<Error = Self::ChainError>
-    + ChainReadTicketOperations<Error = Self::ChainError>
-    + ChainValues<Error = Self::ChainError>
+    ChainReadSafeOperations<Error = Self::ChainError> + ChainValues<Error = Self::ChainError>
 {
     type ChainError: std::error::Error + Send + Sync + 'static;
 }
 
 impl<T, E> HoprStaticChainApi for T
 where
-    T: ChainReadSafeOperations<Error = E> + ChainReadTicketOperations<Error = E> + ChainValues<Error = E>,
+    T: ChainReadSafeOperations<Error = E> + ChainValues<Error = E>,
     E: std::error::Error + Send + Sync + 'static,
 {
     type ChainError = E;
