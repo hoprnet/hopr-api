@@ -170,6 +170,7 @@
               pkgs-unstable.cargo-audit
               cargo-machete
               cargo-shear
+              zizmor
             ];
           };
 

@@ -40,7 +40,7 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run unit tests
-        run: nix develop -c cargo test --lib
+        run: nix develop -c cargo test --lib --all-features
 
 # tests-integration:
 #   name: Integration Tests
