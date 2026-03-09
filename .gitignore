@@ -2,12 +2,10 @@
 /target/
 **/*.rs.bk
 
-# Cargo lock for libraries
-Cargo.lock
-
 # Nix
 /result
 /result-*
+.pre-commit-config.yaml
 
 # IDE
 .idea/
