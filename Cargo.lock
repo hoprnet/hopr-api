@@ -2145,7 +2145,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "async-trait",
  "atomic_enum",
