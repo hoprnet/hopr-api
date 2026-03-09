@@ -145,11 +145,18 @@ where
                         initial_cost
                     }
                     _ => {
-                        // intermediary edges only need to have capacity and score
+                        // Intermediary edges need capacity. When probes exist, scale
+                        // by score; otherwise pass through initial_cost as baseline
+                        // trust (capacity-only from on-chain, probes not yet run).
                         if let Some(intermediate_observation) = observation.intermediate_qos()
                             && intermediate_observation.capacity().is_some()
                         {
-                            return initial_cost * intermediate_observation.score();
+                            let score = intermediate_observation.score();
+                            return if score > 0.0 {
+                                initial_cost * score
+                            } else {
+                                initial_cost
+                            };
                         }
 
                         -initial_cost
@@ -226,23 +233,36 @@ where
                         -initial_cost
                     }
                     v if v == (length - 1) => {
-                        // the last edge should always go from an already connected and measured peer,
-                        // otherwise use a negative cost that should remove the edge from consideration
-                        if observation.immediate_qos().is_some_and(|o| o.is_connected()) {
-                            let score = observation.score();
-                            if score > 0.0 {
-                                return initial_cost * score;
-                            }
+                        // The last edge of the return path (relay -> me) requires connectivity.
+                        // Use the immediate observation score since me has direct measurement data
+                        // for this edge; Observations::score() may return 0 if an empty
+                        // intermediate_probe record exists and shadows the immediate data.
+                        if let Some(immediate_observation) = observation.immediate_qos()
+                            && immediate_observation.is_connected()
+                        {
+                            let score = immediate_observation.score();
+                            return if score > 0.0 {
+                                initial_cost * score
+                            } else {
+                                initial_cost
+                            };
                         }
 
                         -initial_cost
                     }
                     _ => {
-                        // intermediary edges only need to have capacity and score
+                        // Intermediary edges need capacity. When probes exist, scale
+                        // by score; otherwise pass through initial_cost as baseline
+                        // trust (capacity-only from on-chain, probes not yet run).
                         if let Some(intermediate_observation) = observation.intermediate_qos()
                             && intermediate_observation.capacity().is_some()
                         {
-                            return initial_cost * intermediate_observation.score();
+                            let score = intermediate_observation.score();
+                            return if score > 0.0 {
+                                initial_cost * score
+                            } else {
+                                initial_cost
+                            };
                         }
 
                         -initial_cost
