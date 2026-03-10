@@ -2145,8 +2145,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "atomic_enum",
  "auto_impl",
@@ -2156,6 +2157,7 @@ dependencies = [
  "insta",
  "libp2p-identity",
  "multiaddr",
+ "serde",
  "strum 0.28.0",
  "thiserror",
  "tracing",

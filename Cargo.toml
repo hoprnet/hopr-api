@@ -5,9 +5,13 @@ resolver = "2"
 members = ["api"]
 
 [workspace.package]
-rust-version = "1.91"
+version = "1.1.0"
 authors = ["HOPR Association <tech@hoprnet.org>"]
+homepage = "https://hoprnet.org/"
+repository = "https://github.com/hoprnet/hopr-api"
+license = "GPL-3.0-only"
 edition = "2024"
+rust-version = "1.93"
 
 [workspace.dependencies]
 async-trait = "0.1.89"
@@ -37,7 +41,9 @@ tracing = { version = "0.1.44", default-features = false, features = [
 hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "main" }
 
 # dev-dependencies
+anyhow = "1"
 insta = { version = "1.46.3", features = ["json", "yaml", "redactions"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [profile.dev]
 opt-level = 0

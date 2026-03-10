@@ -1,0 +1,6 @@
+---
+source: api/src/graph/costs.rs
+expression: "Invariants\n{ initial_cost: cost_fn.initial_cost(), min_cost: cost_fn.min_cost(), }"
+---
+initial_cost: 1
+min_cost: 0
