@@ -1,0 +1,11 @@
+---
+source: api/src/graph/costs.rs
+expression: "Comparison\n{\n    observations: obs, forward_last_edge_cost: fwd_cost,\n    return_last_edge_cost: ret_cost,\n}"
+---
+observations:
+  immediate: ~
+  intermediate:
+    capacity: 1000
+    score: 0.95
+forward_last_edge_cost: 0.95
+return_last_edge_cost: -1

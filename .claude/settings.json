@@ -9,7 +9,10 @@
       "Bash(cargo test:*)",
       "Bash(find:*)",
       "Bash(nix fmt:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

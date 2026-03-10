@@ -467,7 +467,7 @@ mod tests {
     // ── Test observation builders ───────────────────────────────────────
 
     /// Connected peer with good QoS scores and channel capacity.
-    fn obs_connected_with_capacity() -> Observations {
+    fn with_connected_and_capacity() -> Observations {
         Observations {
             immediate: Some(StubImmediate {
                 connected: true,
@@ -481,7 +481,7 @@ mod tests {
     }
 
     /// Connected peer with only immediate (1-hop) data, no intermediate.
-    fn obs_connected_only_immediate() -> Observations {
+    fn with_connected_only_immediate() -> Observations {
         Observations {
             immediate: Some(StubImmediate {
                 connected: true,
@@ -492,7 +492,7 @@ mod tests {
     }
 
     /// Not connected, but has intermediate QoS + channel capacity.
-    fn obs_not_connected_with_intermediate() -> Observations {
+    fn with_not_connected_and_intermediate() -> Observations {
         Observations {
             immediate: None,
             intermediate: Some(StubIntermediate {
@@ -503,12 +503,12 @@ mod tests {
     }
 
     /// No data at all.
-    fn obs_empty() -> Observations {
+    fn with_empty() -> Observations {
         Observations::default()
     }
 
     /// Only on-chain channel capacity, no probes run yet.
-    fn obs_capacity_only() -> Observations {
+    fn with_capacity_only() -> Observations {
         Observations {
             immediate: None,
             intermediate: Some(StubIntermediate {
@@ -543,10 +543,7 @@ mod tests {
         insta::assert_yaml_snapshot!(Invariants {
             initial_cost: cost_fn.initial_cost(),
             min_cost: cost_fn.min_cost(),
-        }, @r"
-        initial_cost: 1
-        min_cost: 0
-        ");
+        });
         Ok(())
     }
 
@@ -557,21 +554,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 0
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -580,21 +566,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(2.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 2
-        path_index: 0
-        result_cost: 1.9
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -615,18 +590,7 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0
-        initial_cost: 1
-        path_index: 0
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -635,19 +599,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_not_connected_with_intermediate();
+        let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 0
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -656,19 +611,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_only_immediate();
+        let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate: ~
-        initial_cost: 1
-        path_index: 0
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -689,18 +635,7 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: ~
-            score: 0.95
-        initial_cost: 1
-        path_index: 0
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -709,17 +644,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_empty();
+        let obs = with_empty();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate: ~
-        initial_cost: 1
-        path_index: 0
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -730,21 +658,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 2
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
         Ok(())
     }
 
@@ -753,19 +670,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_capacity_only();
+        let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0
-        initial_cost: 1
-        path_index: 2
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
         Ok(())
     }
 
@@ -774,19 +682,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_not_connected_with_intermediate();
+        let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 2
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
         Ok(())
     }
 
@@ -795,19 +694,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_only_immediate();
+        let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate: ~
-        initial_cost: 1
-        path_index: 2
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
         Ok(())
     }
 
@@ -816,21 +706,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(2.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 2, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 2
-        path_index: 2
-        result_cost: 1.9
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 2, result_cost: cost });
         Ok(())
     }
 
@@ -848,16 +727,7 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: ~
-            score: 0.95
-        initial_cost: 1
-        path_index: 2
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
         Ok(())
     }
 
@@ -866,17 +736,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_empty();
+        let obs = with_empty();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate: ~
-        initial_cost: 1
-        path_index: 2
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
         Ok(())
     }
 
@@ -887,21 +750,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 1
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
         Ok(())
     }
 
@@ -910,21 +762,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(2.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 2
-        path_index: 1
-        result_cost: 1.9
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 1, result_cost: cost });
         Ok(())
     }
 
@@ -933,19 +774,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_only_immediate();
+        let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate: ~
-        initial_cost: 1
-        path_index: 1
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
         Ok(())
     }
 
@@ -963,16 +795,7 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: ~
-            score: 0.95
-        initial_cost: 1
-        path_index: 1
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
         Ok(())
     }
 
@@ -981,19 +804,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_capacity_only();
+        let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0
-        initial_cost: 1
-        path_index: 1
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
         Ok(())
     }
 
@@ -1002,17 +816,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_empty();
+        let obs = with_empty();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate: ~
-        initial_cost: 1
-        path_index: 1
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
         Ok(())
     }
 
@@ -1022,8 +829,8 @@ mod tests {
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
 
-        let cost_empty = f(1.0, &obs_empty(), 1);
-        let cost_full = f(1.0, &obs_connected_with_capacity(), 1);
+        let cost_empty = f(1.0, &with_empty(), 1);
+        let cost_full = f(1.0, &with_connected_and_capacity(), 1);
         assert_ne!(cost_empty, cost_full, "intermediate edges should use observations");
         Ok(())
     }
@@ -1035,21 +842,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(1).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 0
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1058,32 +854,14 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 1
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
 
-        let obs_e = obs_empty();
+        let obs_e = with_empty();
         let cost_empty = f(1.0, &obs_e, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs_e, initial_cost: 1.0, path_index: 1, result_cost: cost_empty }, @r"
-        observations:
-          immediate: ~
-          intermediate: ~
-        initial_cost: 1
-        path_index: 1
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs_e, initial_cost: 1.0, path_index: 1, result_cost: cost_empty });
         Ok(())
     }
 
@@ -1094,17 +872,10 @@ mod tests {
         let cost_fn =
             HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_empty();
+        let obs = with_empty();
 
         let cost = f(-1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: -1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate: ~
-        initial_cost: -1
-        path_index: 0
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: -1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1122,10 +893,7 @@ mod tests {
         insta::assert_yaml_snapshot!(Invariants {
             initial_cost: cost_fn.initial_cost(),
             min_cost: cost_fn.min_cost(),
-        }, @r"
-        initial_cost: 1
-        min_cost: 0
-        ");
+        });
         Ok(())
     }
 
@@ -1136,19 +904,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_not_connected_with_intermediate();
+        let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 0
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1157,21 +916,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 0
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1180,19 +928,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_not_connected_with_intermediate();
+        let obs = with_not_connected_and_intermediate();
 
         let cost = f(2.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 2
-        path_index: 0
-        result_cost: 1.9
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1201,19 +940,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_not_connected_with_intermediate();
+        let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 0
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1222,19 +952,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_capacity_only();
+        let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0
-        initial_cost: 1
-        path_index: 0
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1243,19 +964,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_connected_only_immediate();
+        let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate: ~
-        initial_cost: 1
-        path_index: 0
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1264,17 +976,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_empty();
+        let obs = with_empty();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate: ~
-        initial_cost: 1
-        path_index: 0
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
         Ok(())
     }
 
@@ -1286,33 +991,13 @@ mod tests {
         let ret = HoprReturnCostFn::<_, Observations>::new(length);
         let ret_fn = ret.into_cost_fn();
 
-        let obs_conn = obs_connected_with_capacity();
+        let obs_conn = with_connected_and_capacity();
         let cost_connected = ret_fn(1.0, &obs_conn, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs_conn, initial_cost: 1.0, path_index: 1, result_cost: cost_connected }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 1
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs_conn, initial_cost: 1.0, path_index: 1, result_cost: cost_connected });
 
-        let obs_no_conn = obs_not_connected_with_intermediate();
+        let obs_no_conn = with_not_connected_and_intermediate();
         let cost_not_connected = ret_fn(1.0, &obs_no_conn, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs_no_conn, initial_cost: 1.0, path_index: 1, result_cost: cost_not_connected }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        initial_cost: 1
-        path_index: 1
-        result_cost: -1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs_no_conn, initial_cost: 1.0, path_index: 1, result_cost: cost_not_connected });
 
         Ok(())
     }
@@ -1335,18 +1020,7 @@ mod tests {
         };
 
         let cost = ret_fn(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate:
-            connected: true
-            score: 0.95
-          intermediate:
-            capacity: ~
-            score: 0
-        initial_cost: 1
-        path_index: 1
-        result_cost: 0.95
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
 
         Ok(())
     }
@@ -1360,7 +1034,7 @@ mod tests {
         let fwd_fn = fwd.into_cost_fn();
         let ret_fn = ret.into_cost_fn();
 
-        let obs = obs_not_connected_with_intermediate();
+        let obs = with_not_connected_and_intermediate();
         let fwd_cost = fwd_fn(1.0, &obs, 1);
         let ret_cost = ret_fn(1.0, &obs, 1);
 
@@ -1375,15 +1049,7 @@ mod tests {
             observations: obs,
             forward_last_edge_cost: fwd_cost,
             return_last_edge_cost: ret_cost,
-        }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0.95
-        forward_last_edge_cost: 0.95
-        return_last_edge_cost: -1
-        ");
+        });
 
         Ok(())
     }
@@ -1395,19 +1061,10 @@ mod tests {
         let cost_fn =
             HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
         let f = cost_fn.into_cost_fn();
-        let obs = obs_capacity_only();
+        let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost }, @r"
-        observations:
-          immediate: ~
-          intermediate:
-            capacity: 1000
-            score: 0
-        initial_cost: 1
-        path_index: 1
-        result_cost: 1
-        ");
+        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
         Ok(())
     }
 
@@ -1420,7 +1077,7 @@ mod tests {
         let fwd_fn = fwd.into_cost_fn();
         let ret_fn = ret.into_cost_fn();
 
-        let obs = obs_connected_with_capacity();
+        let obs = with_connected_and_capacity();
         let fwd_cost = fwd_fn(1.0, &obs, 1);
         let ret_cost = ret_fn(1.0, &obs, 1);
 
@@ -1440,8 +1097,8 @@ mod tests {
         let cost_fn = HoprForwardCostFn::<_, Observations>::new(length);
         let f = cost_fn.into_cost_fn();
 
-        let me_to_relay = obs_connected_with_capacity();
-        let relay_to_dest = obs_capacity_only();
+        let me_to_relay = with_connected_and_capacity();
+        let relay_to_dest = with_capacity_only();
 
         let cost_after_first = f(1.0, &me_to_relay, 0);
         let cost_after_last = f(cost_after_first, &relay_to_dest, 1);
@@ -1455,10 +1112,7 @@ mod tests {
         insta::assert_yaml_snapshot!(PathCost {
             after_first_edge: cost_after_first,
             after_last_edge: cost_after_last,
-        }, @r"
-        after_first_edge: 0.95
-        after_last_edge: 0.95
-        ");
+        });
 
         Ok(())
     }
@@ -1469,8 +1123,8 @@ mod tests {
         let cost_fn = HoprForwardCostFn::<_, Observations>::new(length);
         let f = cost_fn.into_cost_fn();
 
-        let dest_to_relay = obs_not_connected_with_intermediate();
-        let relay_to_me = obs_connected_with_capacity();
+        let dest_to_relay = with_not_connected_and_intermediate();
+        let relay_to_me = with_connected_and_capacity();
 
         let cost_after_first = f(1.0, &dest_to_relay, 0);
         let cost_after_last = f(cost_after_first, &relay_to_me, 1);
@@ -1484,10 +1138,7 @@ mod tests {
         insta::assert_yaml_snapshot!(PathCost {
             after_first_edge: cost_after_first,
             after_last_edge: cost_after_last,
-        }, @r"
-        after_first_edge: -1
-        after_last_edge: -0.95
-        ");
+        });
 
         Ok(())
     }
@@ -1498,8 +1149,8 @@ mod tests {
         let cost_fn = HoprReturnCostFn::<_, Observations>::new(length);
         let f = cost_fn.into_cost_fn();
 
-        let dest_to_relay = obs_not_connected_with_intermediate();
-        let relay_to_me = obs_connected_with_capacity();
+        let dest_to_relay = with_not_connected_and_intermediate();
+        let relay_to_me = with_connected_and_capacity();
 
         let cost_after_first = f(1.0, &dest_to_relay, 0);
         let cost_after_last = f(cost_after_first, &relay_to_me, 1);
@@ -1513,10 +1164,7 @@ mod tests {
         insta::assert_yaml_snapshot!(PathCost {
             after_first_edge: cost_after_first,
             after_last_edge: cost_after_last,
-        }, @r"
-        after_first_edge: 0.95
-        after_last_edge: 0.9025
-        ");
+        });
 
         Ok(())
     }
@@ -1528,8 +1176,8 @@ mod tests {
         let fwd = HoprForwardCostFn::<_, Observations>::new(length);
         let fwd_fn = fwd.into_cost_fn();
 
-        let me_to_relay = obs_connected_with_capacity();
-        let relay_to_dest = obs_capacity_only();
+        let me_to_relay = with_connected_and_capacity();
+        let relay_to_dest = with_capacity_only();
 
         let fwd_cost = fwd_fn(1.0, &me_to_relay, 0);
         let fwd_cost = fwd_fn(fwd_cost, &relay_to_dest, 1);
@@ -1537,8 +1185,8 @@ mod tests {
         let ret = HoprReturnCostFn::<_, Observations>::new(length);
         let ret_fn = ret.into_cost_fn();
 
-        let dest_to_relay = obs_capacity_only();
-        let relay_to_me = obs_connected_with_capacity();
+        let dest_to_relay = with_capacity_only();
+        let relay_to_me = with_connected_and_capacity();
 
         let ret_cost = ret_fn(1.0, &dest_to_relay, 0);
         let ret_cost = ret_fn(ret_cost, &relay_to_me, 1);
@@ -1552,10 +1200,7 @@ mod tests {
         insta::assert_yaml_snapshot!(BidirectionalCost {
             forward_path_cost: fwd_cost,
             return_path_cost: ret_cost,
-        }, @r"
-        forward_path_cost: 0.95
-        return_path_cost: 0.95
-        ");
+        });
 
         Ok(())
     }
