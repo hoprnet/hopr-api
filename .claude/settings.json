@@ -10,7 +10,7 @@
       "Bash(find:*)",
       "Bash(nix fmt:*)",
       "Bash(grep:*)",
-      "Bash(git:*)",
+      "Bash(git:*)"
     ]
   }
 }
