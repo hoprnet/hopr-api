@@ -1,13 +1,14 @@
 [package]
 name = "hopr-api"
-version = "1.0.4"
+description = "Common high-level API traits used by hopr-lib to implement the HOPR protocol"
+
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Common high-level API traits used by hopr-lib to implement the HOPR protocol"
-homepage = "https://hoprnet.org/"
-repository = "https://github.com/hoprnet/hopr-api"
-license = "GPL-3.0-only"
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 [lib]
 crate-type = ["rlib"]
