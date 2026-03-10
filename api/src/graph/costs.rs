@@ -557,7 +557,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -569,7 +574,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(2.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 2.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -590,7 +600,12 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -602,7 +617,12 @@ mod tests {
         let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -614,7 +634,12 @@ mod tests {
         let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -635,7 +660,12 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -647,7 +677,12 @@ mod tests {
         let obs = with_empty();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -661,7 +696,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 2,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -673,7 +713,12 @@ mod tests {
         let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 2,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -685,7 +730,12 @@ mod tests {
         let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 2,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -697,7 +747,12 @@ mod tests {
         let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 2,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -709,7 +764,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(2.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 2, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 2.0,
+            path_index: 2,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -727,7 +787,12 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 2,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -739,7 +804,12 @@ mod tests {
         let obs = with_empty();
 
         let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 2, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 2,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -753,7 +823,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -765,7 +840,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(2.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 2.0,
+            path_index: 1,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -777,7 +857,12 @@ mod tests {
         let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -795,7 +880,12 @@ mod tests {
         };
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -807,7 +897,12 @@ mod tests {
         let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -819,7 +914,12 @@ mod tests {
         let obs = with_empty();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -845,7 +945,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -857,11 +962,21 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
 
         let obs_e = with_empty();
         let cost_empty = f(1.0, &obs_e, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs_e, initial_cost: 1.0, path_index: 1, result_cost: cost_empty });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs_e,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost_empty
+        });
         Ok(())
     }
 
@@ -875,7 +990,12 @@ mod tests {
         let obs = with_empty();
 
         let cost = f(-1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: -1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: -1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -907,7 +1027,12 @@ mod tests {
         let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -919,7 +1044,12 @@ mod tests {
         let obs = with_connected_and_capacity();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -931,7 +1061,12 @@ mod tests {
         let obs = with_not_connected_and_intermediate();
 
         let cost = f(2.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 2.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 2.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -943,7 +1078,12 @@ mod tests {
         let obs = with_not_connected_and_intermediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -955,7 +1095,12 @@ mod tests {
         let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -967,7 +1112,12 @@ mod tests {
         let obs = with_connected_only_immediate();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -979,7 +1129,12 @@ mod tests {
         let obs = with_empty();
 
         let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 0, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
         Ok(())
     }
 
@@ -993,11 +1148,21 @@ mod tests {
 
         let obs_conn = with_connected_and_capacity();
         let cost_connected = ret_fn(1.0, &obs_conn, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs_conn, initial_cost: 1.0, path_index: 1, result_cost: cost_connected });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs_conn,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost_connected
+        });
 
         let obs_no_conn = with_not_connected_and_intermediate();
         let cost_not_connected = ret_fn(1.0, &obs_no_conn, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs_no_conn, initial_cost: 1.0, path_index: 1, result_cost: cost_not_connected });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs_no_conn,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost_not_connected
+        });
 
         Ok(())
     }
@@ -1020,7 +1185,12 @@ mod tests {
         };
 
         let cost = ret_fn(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
 
         Ok(())
     }
@@ -1064,7 +1234,12 @@ mod tests {
         let obs = with_capacity_only();
 
         let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(CostResult { observations: obs, initial_cost: 1.0, path_index: 1, result_cost: cost });
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
         Ok(())
     }
 
