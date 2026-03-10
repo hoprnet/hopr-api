@@ -2157,6 +2157,7 @@ dependencies = [
  "insta",
  "libp2p-identity",
  "multiaddr",
+ "serde",
  "strum 0.28.0",
  "thiserror",
  "tracing",

@@ -39,6 +39,7 @@ hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "main" }
 # dev-dependencies
 anyhow = "1"
 insta = { version = "1.46.3", features = ["json", "yaml", "redactions"] }
+serde = { version = "1.0", features = ["derive"] }
 
 [profile.dev]
 opt-level = 0

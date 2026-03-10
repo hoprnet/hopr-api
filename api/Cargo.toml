@@ -60,3 +60,4 @@ hopr-types = { workspace = true, features = [
 [dev-dependencies]
 anyhow = { workspace = true }
 insta = { workspace = true }
+serde = { workspace = true }
