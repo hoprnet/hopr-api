@@ -37,6 +37,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
 hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "main" }
 
 # dev-dependencies
+anyhow = "1"
 insta = { version = "1.46.3", features = ["json", "yaml", "redactions"] }
 
 [profile.dev]
