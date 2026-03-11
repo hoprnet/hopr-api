@@ -5,12 +5,12 @@ use super::traits::{
 /// A boxed cost function accepting `(current_cost, edge_weight, path_index) -> new_cost`.
 pub type BasicCostFn<C, W> = Box<dyn Fn(C, &W, usize) -> C>;
 
-/// Penalty multiplier applied to edges that have on-chain capacity but no
-/// probe-based quality score yet. Penalizes unprobed edges to prefer
-/// measured paths while still allowing discovery of new ones.
-const UNPROBED_EDGE_PENALTY: f64 = 0.5;
-
 /// Build a forward HOPR cost function for full graph traversals.
+///
+/// The `penalty` parameter controls how much unprobed edges (those lacking
+/// probe-based quality observations) are penalized relative to measured edges.
+/// A value of `1.0` treats unprobed edges identically to perfect edges;
+/// `0.0` would treat them as worthless.
 pub struct HoprForwardCostFn<C, W> {
     initial: C,
     min: Option<C>,
@@ -42,7 +42,7 @@ impl<W> HoprForwardCostFn<f64, W>
 where
     W: EdgeObservableRead + Send + 'static,
 {
-    pub fn new(length: std::num::NonZeroUsize) -> Self {
+    pub fn new(length: std::num::NonZeroUsize, penalty: f64) -> Self {
         let length = length.get();
         Self {
             initial: 1.0,
@@ -67,7 +67,7 @@ where
                     v if v == (length - 1) => {
                         // The last edge (relay -> dest) may lack immediate QoS in me's graph
                         // because me doesn't directly observe relay-to-dest connectivity.
-                        // Accept capacity (on-chain channel) OR connectivity + score.
+                        // Accept intermediate capacity or immediate connectivity with score.
                         if let Some(intermediate_observation) = observation.intermediate_qos()
                             && intermediate_observation.capacity().is_some()
                         {
@@ -75,13 +75,26 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost * UNPROBED_EDGE_PENALTY
+                                initial_cost * penalty
+                            };
+                        }
+
+                        // If we lack intermediate QoS but have an immediate observation that
+                        // confirms connectivity, use its score as a fallback measure.
+                        if let Some(immediate_observation) = observation.immediate_qos()
+                            && immediate_observation.is_connected()
+                        {
+                            let score = immediate_observation.score();
+                            return if score > 0.0 {
+                                initial_cost * score
+                            } else {
+                                initial_cost * penalty
                             };
                         }
 
                         // The last hop is not monetized, so we cannot reject it outright,
-                        // but penalize the lack of any intermediate observation.
-                        initial_cost * UNPROBED_EDGE_PENALTY
+                        // but penalize the lack of any intermediate or immediate observation.
+                        initial_cost * penalty
                     }
                     _ => {
                         // Intermediary edges need capacity. When probes exist, scale
@@ -93,7 +106,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost * UNPROBED_EDGE_PENALTY
+                                initial_cost * penalty
                             };
                         }
 
@@ -113,7 +126,7 @@ where
 ///
 /// Only payment channel capacity is required for the first edge. If probe-based QoS with a
 /// positive score is available, that score is used to scale the edge cost; otherwise the
-/// initial cost is effectively passed through without score-based scaling.
+/// cost is penalized by the configurable `penalty` multiplier.
 pub struct HoprReturnCostFn<C, W> {
     initial: C,
     min: Option<C>,
@@ -145,7 +158,7 @@ impl<W> HoprReturnCostFn<f64, W>
 where
     W: EdgeObservableRead + Send + 'static,
 {
-    pub fn new(length: std::num::NonZeroUsize) -> Self {
+    pub fn new(length: std::num::NonZeroUsize, penalty: f64) -> Self {
         let length = length.get();
         Self {
             initial: 1.0,
@@ -163,7 +176,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost * UNPROBED_EDGE_PENALTY
+                                initial_cost * penalty
                             };
                         }
 
@@ -181,7 +194,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost * UNPROBED_EDGE_PENALTY
+                                initial_cost * penalty
                             };
                         }
 
@@ -197,7 +210,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost * UNPROBED_EDGE_PENALTY
+                                initial_cost * penalty
                             };
                         }
 
@@ -210,19 +223,12 @@ where
 }
 
 /// Used for finding simple paths without the final loopback in a loopback call.
+///
+/// The `penalty` parameter controls how much unprobed edges are penalized.
 pub struct ForwardPathCostFn<C, W> {
     initial: C,
     min: Option<C>,
     cost_fn: BasicCostFn<C, W>,
-}
-
-impl<W> Default for ForwardPathCostFn<f64, W>
-where
-    W: EdgeObservableRead + Send + 'static,
-{
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl<C, W> CostFn for ForwardPathCostFn<C, W>
@@ -250,7 +256,7 @@ impl<W> ForwardPathCostFn<f64, W>
 where
     W: EdgeObservableRead + Send + 'static,
 {
-    pub fn new() -> Self {
+    pub fn new(penalty: f64) -> Self {
         Self {
             initial: 1.0,
             min: Some(0.0),
@@ -281,7 +287,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost * UNPROBED_EDGE_PENALTY
+                                initial_cost * penalty
                             };
                         }
 
@@ -302,6 +308,8 @@ mod tests {
         EdgeLinkObservable, EdgeNetworkObservableRead, EdgeObservableRead, EdgeProtocolObservable,
         EdgeTransportMeasurement,
     };
+
+    const TEST_PENALTY: f64 = 0.5;
 
     // ── Serializable stub types (pure value holders) ─────────────────────
 
@@ -468,8 +476,10 @@ mod tests {
 
     #[test]
     fn forward_cost_fn_invariants() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         #[derive(serde::Serialize)]
         struct Invariants {
             initial_cost: f64,
@@ -486,8 +496,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_positive_when_connected_with_capacity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -503,8 +515,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_scales_by_immediate_score() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -520,8 +534,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_positive_when_capacity_only_no_intermediate_probe() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = Observations {
             immediate: Some(StubImmediate {
@@ -546,8 +562,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_negative_when_not_connected() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_not_connected_and_intermediate();
 
@@ -563,8 +581,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_negative_when_connected_but_no_intermediate() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_only_immediate();
 
@@ -580,8 +600,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_negative_when_connected_intermediate_but_no_capacity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = Observations {
             immediate: Some(StubImmediate {
@@ -606,8 +628,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_negative_when_empty() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_empty();
 
@@ -625,8 +649,10 @@ mod tests {
 
     #[test]
     fn forward_last_edge_positive_when_capacity_and_score() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -642,8 +668,10 @@ mod tests {
 
     #[test]
     fn forward_last_edge_positive_with_capacity_only_no_probes() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_capacity_only();
 
@@ -659,8 +687,10 @@ mod tests {
 
     #[test]
     fn forward_last_edge_positive_without_connectivity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_not_connected_and_intermediate();
 
@@ -676,8 +706,10 @@ mod tests {
 
     #[test]
     fn forward_last_edge_positive_with_connectivity_no_capacity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_only_immediate();
 
@@ -693,8 +725,10 @@ mod tests {
 
     #[test]
     fn forward_last_edge_scales_by_intermediate_score() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -710,8 +744,10 @@ mod tests {
 
     #[test]
     fn forward_last_edge_positive_when_intermediate_but_no_capacity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = Observations {
             immediate: None,
@@ -733,8 +769,10 @@ mod tests {
 
     #[test]
     fn forward_last_edge_positive_when_empty() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_empty();
 
@@ -752,8 +790,10 @@ mod tests {
 
     #[test]
     fn forward_intermediate_edge_positive_when_capacity_and_score() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -769,8 +809,10 @@ mod tests {
 
     #[test]
     fn forward_intermediate_edge_scales_by_intermediate_score() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -786,8 +828,10 @@ mod tests {
 
     #[test]
     fn forward_intermediate_edge_negative_when_no_intermediate() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_only_immediate();
 
@@ -803,8 +847,10 @@ mod tests {
 
     #[test]
     fn forward_intermediate_edge_negative_when_no_capacity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = Observations {
             immediate: None,
@@ -826,8 +872,10 @@ mod tests {
 
     #[test]
     fn forward_intermediate_edge_positive_when_capacity_only_no_probes() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_capacity_only();
 
@@ -843,8 +891,10 @@ mod tests {
 
     #[test]
     fn forward_intermediate_edge_negative_when_empty() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_empty();
 
@@ -860,8 +910,10 @@ mod tests {
 
     #[test]
     fn forward_intermediate_edge_uses_observations() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
 
         let cost_empty = f(1.0, &with_empty(), 1);
@@ -874,8 +926,10 @@ mod tests {
 
     #[test]
     fn forward_length_one_has_only_first_and_last_edge() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(1).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(1).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -891,8 +945,10 @@ mod tests {
 
     #[test]
     fn forward_length_two_intermediate_at_index_one() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -919,8 +975,10 @@ mod tests {
 
     #[test]
     fn forward_negative_initial_cost_inverts_rejection() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprForwardCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_empty();
 
@@ -938,8 +996,10 @@ mod tests {
 
     #[test]
     fn return_cost_fn_invariants() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         #[derive(serde::Serialize)]
         struct Invariants {
             initial_cost: f64,
@@ -956,8 +1016,10 @@ mod tests {
 
     #[test]
     fn return_first_edge_positive_with_intermediate_and_capacity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_not_connected_and_intermediate();
 
@@ -973,8 +1035,10 @@ mod tests {
 
     #[test]
     fn return_first_edge_positive_with_full_data() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
 
@@ -990,8 +1054,10 @@ mod tests {
 
     #[test]
     fn return_first_edge_scales_by_intermediate_score() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_not_connected_and_intermediate();
 
@@ -1007,8 +1073,10 @@ mod tests {
 
     #[test]
     fn return_first_edge_does_not_require_connectivity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_not_connected_and_intermediate();
 
@@ -1024,8 +1092,10 @@ mod tests {
 
     #[test]
     fn return_first_edge_positive_when_capacity_only_no_probes() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_capacity_only();
 
@@ -1041,8 +1111,10 @@ mod tests {
 
     #[test]
     fn return_first_edge_negative_when_no_capacity() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_only_immediate();
 
@@ -1058,8 +1130,10 @@ mod tests {
 
     #[test]
     fn return_first_edge_negative_when_empty() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(2).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_empty();
 
@@ -1078,7 +1152,7 @@ mod tests {
     #[test]
     fn return_last_edge_requires_connectivity() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let ret = HoprReturnCostFn::<_, Observations>::new(length);
+        let ret = HoprReturnCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let ret_fn = ret.into_cost_fn();
 
         let obs_conn = with_connected_and_capacity();
@@ -1105,7 +1179,7 @@ mod tests {
     #[test]
     fn return_last_edge_positive_when_connected_with_empty_intermediate() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let ret = HoprReturnCostFn::<_, Observations>::new(length);
+        let ret = HoprReturnCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let ret_fn = ret.into_cost_fn();
 
         let obs = Observations {
@@ -1131,11 +1205,36 @@ mod tests {
     }
 
     #[test]
+    fn return_last_edge_penalized_when_connected_but_zero_score() -> anyhow::Result<()> {
+        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
+        let ret = HoprReturnCostFn::<_, Observations>::new(length, TEST_PENALTY);
+        let ret_fn = ret.into_cost_fn();
+
+        let obs = Observations {
+            immediate: Some(StubImmediate {
+                connected: true,
+                score: 0.0,
+            }),
+            intermediate: None,
+        };
+
+        let cost = ret_fn(1.0, &obs, 1);
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 1,
+            result_cost: cost
+        });
+
+        Ok(())
+    }
+
+    #[test]
     fn forward_last_edge_differs_from_return_last_edge() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
 
-        let fwd = HoprForwardCostFn::<_, Observations>::new(length);
-        let ret = HoprReturnCostFn::<_, Observations>::new(length);
+        let fwd = HoprForwardCostFn::<_, Observations>::new(length, TEST_PENALTY);
+        let ret = HoprReturnCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let fwd_fn = fwd.into_cost_fn();
         let ret_fn = ret.into_cost_fn();
 
@@ -1163,8 +1262,10 @@ mod tests {
 
     #[test]
     fn return_intermediate_edge_positive_when_capacity_only_no_probes() -> anyhow::Result<()> {
-        let cost_fn =
-            HoprReturnCostFn::<_, Observations>::new(std::num::NonZeroUsize::new(3).context("should be non-zero")?);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(
+            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
+            TEST_PENALTY,
+        );
         let f = cost_fn.into_cost_fn();
         let obs = with_capacity_only();
 
@@ -1182,8 +1283,8 @@ mod tests {
     fn return_intermediate_edge_same_as_forward() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(3).context("should be non-zero")?;
 
-        let fwd = HoprForwardCostFn::<_, Observations>::new(length);
-        let ret = HoprReturnCostFn::<_, Observations>::new(length);
+        let fwd = HoprForwardCostFn::<_, Observations>::new(length, TEST_PENALTY);
+        let ret = HoprReturnCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let fwd_fn = fwd.into_cost_fn();
         let ret_fn = ret.into_cost_fn();
 
@@ -1204,7 +1305,7 @@ mod tests {
     #[test]
     fn symmetrical_forward_path_works_with_forward_cost_fn() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let cost_fn = HoprForwardCostFn::<_, Observations>::new(length);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let f = cost_fn.into_cost_fn();
 
         let me_to_relay = with_connected_and_capacity();
@@ -1230,7 +1331,7 @@ mod tests {
     #[test]
     fn symmetrical_return_path_rejected_by_forward_cost_fn() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let cost_fn = HoprForwardCostFn::<_, Observations>::new(length);
+        let cost_fn = HoprForwardCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let f = cost_fn.into_cost_fn();
 
         let dest_to_relay = with_not_connected_and_intermediate();
@@ -1256,7 +1357,7 @@ mod tests {
     #[test]
     fn symmetrical_return_path_works_with_return_cost_fn() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let cost_fn = HoprReturnCostFn::<_, Observations>::new(length);
+        let cost_fn = HoprReturnCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let f = cost_fn.into_cost_fn();
 
         let dest_to_relay = with_not_connected_and_intermediate();
@@ -1283,7 +1384,7 @@ mod tests {
     fn symmetrical_bidirectional_both_paths_positive() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
 
-        let fwd = HoprForwardCostFn::<_, Observations>::new(length);
+        let fwd = HoprForwardCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let fwd_fn = fwd.into_cost_fn();
 
         let me_to_relay = with_connected_and_capacity();
@@ -1292,7 +1393,7 @@ mod tests {
         let fwd_cost = fwd_fn(1.0, &me_to_relay, 0);
         let fwd_cost = fwd_fn(fwd_cost, &relay_to_dest, 1);
 
-        let ret = HoprReturnCostFn::<_, Observations>::new(length);
+        let ret = HoprReturnCostFn::<_, Observations>::new(length, TEST_PENALTY);
         let ret_fn = ret.into_cost_fn();
 
         let dest_to_relay = with_capacity_only();
