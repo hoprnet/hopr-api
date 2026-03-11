@@ -5,6 +5,11 @@ use super::traits::{
 /// A boxed cost function accepting `(current_cost, edge_weight, path_index) -> new_cost`.
 pub type BasicCostFn<C, W> = Box<dyn Fn(C, &W, usize) -> C>;
 
+/// Penalty multiplier applied to edges that have on-chain capacity but no
+/// probe-based quality score yet. Penalizes unprobed edges to prefer
+/// measured paths while still allowing discovery of new ones.
+const UNPROBED_EDGE_PENALTY: f64 = 0.5;
+
 /// Build a forward HOPR cost function for full graph traversals.
 pub struct HoprForwardCostFn<C, W> {
     initial: C,
@@ -70,16 +75,17 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost
+                                initial_cost * UNPROBED_EDGE_PENALTY
                             };
                         }
 
-                        initial_cost
+                        // The last hop is not monetized, so we cannot reject it outright,
+                        // but penalize the lack of any intermediate observation.
+                        initial_cost * UNPROBED_EDGE_PENALTY
                     }
                     _ => {
                         // Intermediary edges need capacity. When probes exist, scale
-                        // by score; otherwise pass through initial_cost as baseline
-                        // trust (capacity-only from on-chain, probes not yet run).
+                        // by score; otherwise penalize unprobed edges.
                         if let Some(intermediate_observation) = observation.intermediate_qos()
                             && intermediate_observation.capacity().is_some()
                         {
@@ -87,7 +93,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost
+                                initial_cost * UNPROBED_EDGE_PENALTY
                             };
                         }
 
@@ -149,8 +155,7 @@ where
                     0 => {
                         // The first edge of the return path (dest -> relay) requires
                         // payment channel capacity.
-                        // When probes exist, scale by score; otherwise pass through
-                        // the cost as baseline trust (capacity-only from on-chain).
+                        // When probes exist, scale by score; otherwise penalize unprobed edges.
                         if let Some(intermediate_observation) = observation.intermediate_qos()
                             && intermediate_observation.capacity().is_some()
                         {
@@ -158,7 +163,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost
+                                initial_cost * UNPROBED_EDGE_PENALTY
                             };
                         }
 
@@ -176,7 +181,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost
+                                initial_cost * UNPROBED_EDGE_PENALTY
                             };
                         }
 
@@ -184,8 +189,7 @@ where
                     }
                     _ => {
                         // Intermediary edges need capacity. When probes exist, scale
-                        // by score; otherwise pass through initial_cost as baseline
-                        // trust (capacity-only from on-chain, probes not yet run).
+                        // by score; otherwise penalize unprobed edges.
                         if let Some(intermediate_observation) = observation.intermediate_qos()
                             && intermediate_observation.capacity().is_some()
                         {
@@ -193,7 +197,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost
+                                initial_cost * UNPROBED_EDGE_PENALTY
                             };
                         }
 
@@ -268,9 +272,8 @@ where
                         -initial_cost
                     }
                     _ => {
-                        // intermediary edges only need to have capacity and score.
-                        // When capacity exists but no probes have run yet (score 0), pass through
-                        // initial_cost to allow the first probe to discover this path.
+                        // Intermediary edges need capacity. When probes exist, scale
+                        // by score; otherwise penalize unprobed edges.
                         if let Some(intermediate_observation) = observation.intermediate_qos()
                             && intermediate_observation.capacity().is_some()
                         {
@@ -278,7 +281,7 @@ where
                             return if score > 0.0 {
                                 initial_cost * score
                             } else {
-                                initial_cost
+                                initial_cost * UNPROBED_EDGE_PENALTY
                             };
                         }
 

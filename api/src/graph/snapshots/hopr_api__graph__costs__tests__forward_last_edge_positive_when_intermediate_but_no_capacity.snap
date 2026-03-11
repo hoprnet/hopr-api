@@ -9,4 +9,4 @@ observations:
     score: 0.95
 initial_cost: 1
 path_index: 2
-result_cost: 1
+result_cost: 0.5
