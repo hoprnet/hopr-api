@@ -2,7 +2,8 @@
 
 Common high-level API traits for the [HOPR protocol](https://hoprnet.org/).
 
-This crate defines the public API surface as **traits only** — no concrete implementations.
+This crate defines the API between individual components in the HOPR project, not necesarrily a user-facing public APIs. 
+This crate contains **traits only** — no concrete implementations.
 Implementations live in the main [hoprnet](https://github.com/hoprnet/hoprnet) repository.
 
 ## Modules
