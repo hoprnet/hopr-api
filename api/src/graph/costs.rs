@@ -9,10 +9,12 @@ pub type BasicCostFn<C, W> = Arc<dyn Fn(C, &W, usize) -> C + Send + Sync>;
 
 /// Build a forward HOPR cost function for full graph traversals.
 ///
-/// The `penalty` parameter controls how much unprobed edges (those lacking
-/// probe-based quality observations) are penalized relative to measured edges.
-/// A value of `1.0` treats unprobed edges identically to perfect edges;
-/// `0.0` would treat them as worthless.
+/// The `penalty` is a penalizing multiplier applied to edges that lack
+/// probe-based quality observations (e.g. only on-chain capacity or only
+/// immediate connectivity data). It scales the accumulated cost downward,
+/// making unprobed edges less attractive than measured ones while still
+/// allowing path discovery. A value of `1.0` means no penalty; lower
+/// values (e.g. `0.5`) increasingly penalize unprobed edges.
 pub struct HoprForwardCostFn<C, W> {
     initial: C,
     min: Option<C>,
@@ -138,7 +140,7 @@ where
 ///
 /// Only payment channel capacity is required for the first edge. If probe-based QoS with a
 /// positive score is available, that score is used to scale the edge cost; otherwise the
-/// cost is penalized by the configurable `penalty` multiplier.
+/// `penalty` penalizing multiplier is applied to scale the cost downward.
 pub struct HoprReturnCostFn<C, W> {
     initial: C,
     min: Option<C>,
@@ -246,7 +248,8 @@ where
 
 /// Used for finding simple paths without the final loopback in a loopback call.
 ///
-/// The `penalty` parameter controls how much unprobed edges are penalized.
+/// The `penalty` is a penalizing multiplier applied to edges that lack
+/// probe-based quality observations, scaling the accumulated cost downward.
 pub struct ForwardPathCostFn<C, W> {
     initial: C,
     min: Option<C>,
