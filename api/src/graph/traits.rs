@@ -214,7 +214,7 @@ pub trait CostFn {
     fn min_cost(&self) -> Option<Self::Cost>;
 
     /// The cost function accepting graph properties to establish the final cost.
-    fn into_cost_fn(self) -> Box<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost>;
+    fn into_cost_fn(self) -> std::sync::Arc<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost + Send + Sync>;
 }
 
 /// A trait specifying the graph traversal functionality.
