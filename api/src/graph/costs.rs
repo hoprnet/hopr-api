@@ -35,7 +35,7 @@ fn require_capacity<W: EdgeObservableRead>(observation: &W, cost: f64, penalty: 
 /// Use one of the named constructors to create the appropriate variant:
 /// - [`EdgeCostFn::forward`] — full graph traversal in the forward direction
 /// - [`EdgeCostFn::returning`] — full graph traversal in the return direction
-/// - [`EdgeCostFn::forward_path`] — simple forward paths without final loopback
+/// - [`EdgeCostFn::forward_without_self_loopback`] — simple forward paths without final loopback
 pub struct EdgeCostFn<C, W> {
     initial: C,
     min: Option<C>,
@@ -159,7 +159,7 @@ where
     /// - **First edge**: same as [`EdgeCostFn::forward`].
     /// - **All other edges**: require capacity; the `penalty` penalizing multiplier is applied when probe scores are
     ///   absent.
-    pub fn forward_path(penalty: f64) -> Self {
+    pub fn forward_without_self_loopback(penalty: f64) -> Self {
         Self {
             initial: 1.0,
             min: Some(0.0),
@@ -188,7 +188,7 @@ pub type HoprForwardCostFn<C, W> = EdgeCostFn<C, W>;
 pub type HoprReturnCostFn<C, W> = EdgeCostFn<C, W>;
 
 /// Type alias preserving the original forward path cost function name.
-pub type ForwardPathCostFn<C, W> = EdgeCostFn<C, W>;
+pub type ForwardWithoutSelfLoopbackCostFn<C, W> = EdgeCostFn<C, W>;
 
 #[cfg(test)]
 mod tests {
@@ -1194,7 +1194,7 @@ mod tests {
     // ── Symmetrical communication tests ─────────────────────────────────
 
     #[test]
-    fn symmetrical_forward_path_works_with_forward_cost_fn() -> anyhow::Result<()> {
+    fn symmetrical_forward_without_self_loopback_works_with_forward_cost_fn() -> anyhow::Result<()> {
         let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
         let cost_fn = EdgeCostFn::<_, Observations>::forward(length, TEST_PENALTY);
         let f = cost_fn.into_cost_fn();
@@ -1295,12 +1295,12 @@ mod tests {
 
         #[derive(serde::Serialize)]
         struct BidirectionalCost {
-            forward_path_cost: f64,
+            forward_without_self_loopback_cost: f64,
             return_path_cost: f64,
         }
 
         insta::assert_yaml_snapshot!(BidirectionalCost {
-            forward_path_cost: fwd_cost,
+            forward_without_self_loopback_cost: fwd_cost,
             return_path_cost: ret_cost,
         });
 
