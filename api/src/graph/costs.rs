@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use super::traits::{
     CostFn, EdgeLinkObservable, EdgeNetworkObservableRead, EdgeObservableRead, EdgeProtocolObservable,
 };
 
-/// A boxed cost function accepting `(current_cost, edge_weight, path_index) -> new_cost`.
-pub type BasicCostFn<C, W> = Box<dyn Fn(C, &W, usize) -> C>;
+/// A shared cost function accepting `(current_cost, edge_weight, path_index) -> new_cost`.
+pub type BasicCostFn<C, W> = Arc<dyn Fn(C, &W, usize) -> C + Send + Sync>;
 
 /// Build a forward HOPR cost function for full graph traversals.
 ///
@@ -15,6 +17,16 @@ pub struct HoprForwardCostFn<C, W> {
     initial: C,
     min: Option<C>,
     cost_fn: BasicCostFn<C, W>,
+}
+
+impl<C: Clone, W> Clone for HoprForwardCostFn<C, W> {
+    fn clone(&self) -> Self {
+        Self {
+            initial: self.initial.clone(),
+            min: self.min.clone(),
+            cost_fn: Arc::clone(&self.cost_fn),
+        }
+    }
 }
 
 impl<C, W> CostFn for HoprForwardCostFn<C, W>
@@ -33,7 +45,7 @@ where
         self.min.clone()
     }
 
-    fn into_cost_fn(self) -> Box<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost> {
+    fn into_cost_fn(self) -> BasicCostFn<Self::Cost, Self::Weight> {
         self.cost_fn
     }
 }
@@ -47,7 +59,7 @@ where
         Self {
             initial: 1.0,
             min: Some(0.0),
-            cost_fn: Box::new(move |initial_cost: f64, observation: &W, path_index: usize| {
+            cost_fn: Arc::new(move |initial_cost: f64, observation: &W, path_index: usize| {
                 match path_index {
                     0 => {
                         // the first edge should always go to an already connected and measured peer,
@@ -133,6 +145,16 @@ pub struct HoprReturnCostFn<C, W> {
     cost_fn: BasicCostFn<C, W>,
 }
 
+impl<C: Clone, W> Clone for HoprReturnCostFn<C, W> {
+    fn clone(&self) -> Self {
+        Self {
+            initial: self.initial.clone(),
+            min: self.min.clone(),
+            cost_fn: Arc::clone(&self.cost_fn),
+        }
+    }
+}
+
 impl<C, W> CostFn for HoprReturnCostFn<C, W>
 where
     C: Clone + PartialOrd + Send + Sync + 'static,
@@ -149,7 +171,7 @@ where
         self.min.clone()
     }
 
-    fn into_cost_fn(self) -> Box<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost> {
+    fn into_cost_fn(self) -> BasicCostFn<Self::Cost, Self::Weight> {
         self.cost_fn
     }
 }
@@ -163,7 +185,7 @@ where
         Self {
             initial: 1.0,
             min: Some(0.0),
-            cost_fn: Box::new(move |initial_cost: f64, observation: &W, path_index: usize| {
+            cost_fn: Arc::new(move |initial_cost: f64, observation: &W, path_index: usize| {
                 match path_index {
                     0 => {
                         // The first edge of the return path (dest -> relay) requires
@@ -231,6 +253,16 @@ pub struct ForwardPathCostFn<C, W> {
     cost_fn: BasicCostFn<C, W>,
 }
 
+impl<C: Clone, W> Clone for ForwardPathCostFn<C, W> {
+    fn clone(&self) -> Self {
+        Self {
+            initial: self.initial.clone(),
+            min: self.min.clone(),
+            cost_fn: Arc::clone(&self.cost_fn),
+        }
+    }
+}
+
 impl<C, W> CostFn for ForwardPathCostFn<C, W>
 where
     C: Clone + PartialOrd + Send + Sync + 'static,
@@ -247,7 +279,7 @@ where
         self.min.clone()
     }
 
-    fn into_cost_fn(self) -> Box<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost> {
+    fn into_cost_fn(self) -> BasicCostFn<Self::Cost, Self::Weight> {
         self.cost_fn
     }
 }
@@ -260,7 +292,7 @@ where
         Self {
             initial: 1.0,
             min: Some(0.0),
-            cost_fn: Box::new(move |initial_cost: f64, observation: &W, path_index: usize| {
+            cost_fn: Arc::new(move |initial_cost: f64, observation: &W, path_index: usize| {
                 match path_index {
                     0 => {
                         // the first edge should always go to an already connected and measured peer,
