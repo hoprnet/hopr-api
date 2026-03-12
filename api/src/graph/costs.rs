@@ -79,28 +79,21 @@ where
 {
     /// Build a forward HOPR cost function for full graph traversals.
     ///
+    /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
+    /// to edges lacking probe-based quality observations.
+    ///
     /// - **First edge**: requires connectivity and intermediate capacity; scores by the better of
     ///   immediate/intermediate observations.
     /// - **Last edge**: accepts intermediate capacity or immediate connectivity; penalizes when neither is available
-    ///   (last hop is not monetized).
+    ///   (last hop is not monetized). Takes priority over first edge when `length == 1`.
     /// - **Intermediate edges**: require capacity; penalize when unprobed.
     pub fn forward(length: std::num::NonZeroUsize, penalty: f64) -> Self {
         let length = length.get();
+        let penalty = penalty.clamp(0.0, 1.0);
         Self {
             initial: 1.0,
             min: Some(0.0),
             cost_fn: Arc::new(move |cost: f64, observation: &W, path_index: usize| match path_index {
-                0 => {
-                    // First edge: require connected peer with intermediate capacity
-                    if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
-                        && let Some(intermediate) = observation.intermediate_qos()
-                        && intermediate.capacity().is_some()
-                    {
-                        return cost * immediate.score().max(intermediate.score());
-                    }
-                    -cost
-                }
                 v if v == (length - 1) => {
                     // Last edge (relay -> dest): accept intermediate capacity or immediate connectivity
                     if let Some(intermediate) = observation.intermediate_qos()
@@ -119,12 +112,26 @@ where
                     // Last hop is not monetized — penalize but do not reject
                     cost * penalty
                 }
+                0 => {
+                    // First edge: require connected peer with intermediate capacity
+                    if let Some(immediate) = observation.immediate_qos()
+                        && immediate.is_connected()
+                        && let Some(intermediate) = observation.intermediate_qos()
+                        && intermediate.capacity().is_some()
+                    {
+                        return cost * immediate.score().max(intermediate.score());
+                    }
+                    -cost
+                }
                 _ => require_capacity(observation, cost, penalty),
             }),
         }
     }
 
     /// Build a HOPR cost function for full graph traversals in the return direction.
+    ///
+    /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
+    /// to edges lacking probe-based quality observations.
     ///
     /// Used when the planner (`me`) constructs the return path `dest -> relay -> me`.
     /// The first edge (`dest -> relay`) has relaxed requirements compared to
@@ -135,6 +142,7 @@ where
     ///   scores are absent.
     pub fn returning(length: std::num::NonZeroUsize, penalty: f64) -> Self {
         let length = length.get();
+        let penalty = penalty.clamp(0.0, 1.0);
         Self {
             initial: 1.0,
             min: Some(0.0),
@@ -156,10 +164,14 @@ where
 
     /// Build a cost function for simple forward paths without the final loopback.
     ///
+    /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
+    /// to edges lacking probe-based quality observations.
+    ///
     /// - **First edge**: same as [`EdgeCostFn::forward`].
     /// - **All other edges**: require capacity; the `penalty` penalizing multiplier is applied when probe scores are
     ///   absent.
     pub fn forward_without_self_loopback(penalty: f64) -> Self {
+        let penalty = penalty.clamp(0.0, 1.0);
         Self {
             initial: 1.0,
             min: Some(0.0),
