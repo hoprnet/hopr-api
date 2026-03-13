@@ -22,10 +22,8 @@ pub enum EdgeWeightType {
     Capacity(Option<Capacity>),
     /// An update to the physical connectivity status of this edge.
     Connected(bool),
-    /// A message was sent to the immediate peer on this edge.
-    MessageSent,
-    /// An acknowledgment was received from the immediate peer on this edge.
-    AckReceived,
+    /// An update to the immediate hop protocol conformance metrics (messages sent / acks received).
+    ImmediateProtocolConformance,
 }
 
 /// Trait for recording new observations onto a graph edge.
