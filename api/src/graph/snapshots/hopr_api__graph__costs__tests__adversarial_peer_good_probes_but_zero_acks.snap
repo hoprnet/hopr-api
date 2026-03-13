@@ -6,8 +6,10 @@ observations:
   immediate:
     connected: true
     score: 0.95
-    ack_rate: 0.9
-  intermediate: ~
+    ack_rate: 0
+  intermediate:
+    capacity: 1000
+    score: 0.95
 initial_cost: 1
 path_index: 0
-result_cost: -1
+result_cost: -0.95
