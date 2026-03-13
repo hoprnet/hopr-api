@@ -103,7 +103,8 @@ where
     /// - **First edge**: requires connectivity and intermediate capacity; scores by the better of
     ///   immediate/intermediate observations, then applies the ack rate modifier.
     /// - **Last edge**: accepts intermediate capacity or immediate connectivity; penalizes when neither is available
-    ///   (last hop is not monetized). Takes priority over first edge when `length == 1`.
+    ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
+    ///   is applied when immediate QoS data is available.
     /// - **Intermediate edges**: require capacity; penalize when unprobed.
     pub fn forward(length: std::num::NonZeroUsize, penalty: f64, min_ack_rate: f64) -> Self {
         let length = length.get();
@@ -118,14 +119,27 @@ where
                     if let Some(intermediate) = observation.intermediate_qos()
                         && intermediate.capacity().is_some()
                     {
-                        return score_or_penalize(cost, intermediate.score(), penalty);
+                        let base = score_or_penalize(cost, intermediate.score(), penalty);
+                        // For direct routes (length == 1) the single edge is also the immediate peer,
+                        // so apply ack rate when immediate data is available.
+                        if length == 1
+                            && let Some(immediate) = observation.immediate_qos()
+                        {
+                            return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                        }
+                        return base;
                     }
 
                     // Fallback: use immediate connectivity score if available
                     if let Some(immediate) = observation.immediate_qos()
                         && immediate.is_connected()
                     {
-                        return score_or_penalize(cost, immediate.score(), penalty);
+                        let base = score_or_penalize(cost, immediate.score(), penalty);
+                        // Same as above: enforce ack rate for 1-hop routes
+                        if length == 1 {
+                            return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                        }
+                        return base;
                     }
 
                     // Last hop is not monetized — penalize but do not reject
@@ -902,6 +916,36 @@ mod tests {
         );
         let f = cost_fn.into_cost_fn();
         let obs = with_connected_and_capacity();
+
+        let cost = f(1.0, &obs, 0);
+        insta::assert_yaml_snapshot!(CostResult {
+            observations: obs,
+            initial_cost: 1.0,
+            path_index: 0,
+            result_cost: cost
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn forward_length_one_rejected_when_ack_rate_below_threshold() -> anyhow::Result<()> {
+        let cost_fn = EdgeCostFn::<_, Observations>::forward(
+            std::num::NonZeroUsize::new(1).context("should be non-zero")?,
+            TEST_PENALTY,
+            TEST_MIN_ACK_RATE,
+        );
+        let f = cost_fn.into_cost_fn();
+        let obs = Observations {
+            immediate: Some(StubImmediate {
+                connected: true,
+                score: 0.95,
+                ack_rate: Some(0.05),
+            }),
+            intermediate: Some(StubIntermediate {
+                capacity: Some(1000),
+                score: 0.95,
+            }),
+        };
 
         let cost = f(1.0, &obs, 0);
         insta::assert_yaml_snapshot!(CostResult {
