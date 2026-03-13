@@ -23,7 +23,12 @@ pub enum EdgeWeightType {
     /// An update to the physical connectivity status of this edge.
     Connected(bool),
     /// An update to the immediate hop protocol conformance metrics (messages sent / acks received).
-    ImmediateProtocolConformance,
+    ImmediateProtocolConformance {
+        /// Total number of packets sent to the immediate peer.
+        num_packets: u64,
+        /// Total number of acknowledgments received from the immediate peer.
+        num_acks: u64,
+    },
 }
 
 /// Trait for recording new observations onto a graph edge.
