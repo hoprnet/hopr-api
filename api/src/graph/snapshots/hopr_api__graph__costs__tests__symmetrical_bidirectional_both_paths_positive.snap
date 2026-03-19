@@ -1,0 +1,6 @@
+---
+source: api/src/graph/costs.rs
+expression: "BidirectionalCost\n{ forward_without_self_loopback_cost: fwd_cost, return_path_cost: ret_cost, }"
+---
+forward_without_self_loopback_cost: 0.4275
+return_path_cost: 0.4275

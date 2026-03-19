@@ -22,6 +22,13 @@ pub enum EdgeWeightType {
     Capacity(Option<Capacity>),
     /// An update to the physical connectivity status of this edge.
     Connected(bool),
+    /// An update to the immediate hop protocol conformance metrics (messages sent / acks received).
+    ImmediateProtocolConformance {
+        /// Total number of packets sent to the immediate peer.
+        num_packets: u64,
+        /// Total number of acknowledgments received from the immediate peer.
+        num_acks: u64,
+    },
 }
 
 /// Trait for recording new observations onto a graph edge.
@@ -45,10 +52,24 @@ pub trait EdgeProtocolObservable {
     fn capacity(&self) -> Option<u128>;
 }
 
+/// Trait for reading immediate hop protocol conformance metrics.
+///
+/// Tracks point-to-point message acknowledgment behavior between directly
+/// connected peers. The ack rate can be used by cost functions to detect
+/// adversarial nodes that drop or fail to acknowledge messages.
+pub trait EdgeImmediateProtocolObservable {
+    /// The ratio of acknowledged messages to sent messages for this immediate edge.
+    ///
+    /// Returns `None` when insufficient messages have been sent to compute
+    /// a meaningful ratio. Returns `Some(rate)` in the range \[0.0, 1.0\]
+    /// where 1.0 means all messages were acknowledged.
+    fn ack_rate(&self) -> Option<f64>;
+}
+
 /// Trait for reading aggregated quality-of-service observations from a graph edge.
 pub trait EdgeObservableRead {
-    /// Measurement type for direct (1-hop) probes, including network connectivity info.
-    type ImmediateMeasurement: EdgeLinkObservable + EdgeNetworkObservableRead + Send;
+    /// Measurement type for direct (1-hop) probes, including network connectivity and protocol conformance info.
+    type ImmediateMeasurement: EdgeLinkObservable + EdgeNetworkObservableRead + EdgeImmediateProtocolObservable + Send;
     /// Measurement type for relayed probes through an intermediate, including channel capacity.
     type IntermediateMeasurement: EdgeLinkObservable + EdgeProtocolObservable + Send;
 
@@ -214,7 +235,7 @@ pub trait CostFn {
     fn min_cost(&self) -> Option<Self::Cost>;
 
     /// The cost function accepting graph properties to establish the final cost.
-    fn into_cost_fn(self) -> Box<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost>;
+    fn into_cost_fn(self) -> std::sync::Arc<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost + Send + Sync>;
 }
 
 /// A trait specifying the graph traversal functionality.
