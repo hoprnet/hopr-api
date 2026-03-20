@@ -12,11 +12,12 @@ use hopr_types::{
     internal::prelude::{ChannelStatus, generate_channel_id},
     primitive::prelude::Address,
 };
-pub type DateTime = chrono::DateTime<chrono::Utc>;
-pub use chrono::Utc;
 use strum::IntoDiscriminant;
 
 use crate::chain::ChainReceipt;
+
+/// Alias for `chrono::DateTime<chrono::Utc>`.
+pub type DateTime = chrono::DateTime<chrono::Utc>;
 
 /// Selector for channels.
 ///
@@ -27,6 +28,8 @@ pub struct ChannelSelector {
     pub source: Option<Address>,
     /// Filter by destination address
     pub destination: Option<Address>,
+    /// Filter by channel id.
+    pub id: Option<ChannelId>,
     /// Filter by possible channel states.
     pub allowed_states: Vec<ChannelStatusDiscriminants>,
     /// Range of closure times if `PendingToClose` was specified in `allowed_states`,
@@ -39,6 +42,7 @@ impl Default for ChannelSelector {
         Self {
             source: None,
             destination: None,
+            id: None,
             allowed_states: vec![],
             closure_time_range: (Bound::Unbounded, Bound::Unbounded),
         }
@@ -47,16 +51,33 @@ impl Default for ChannelSelector {
 
 impl ChannelSelector {
     /// Sets the `source` bound on a channel.
+    ///
+    /// If `id` was previously set, it will be unset.
     #[must_use]
     pub fn with_source<A: Into<Address>>(mut self, address: A) -> Self {
         self.source = Some(address.into());
+        self.id = None;
         self
     }
 
     /// Sets the `destination` bound on a channel.
+    ///
+    /// If `id` was previously set, it will be unset.
     #[must_use]
     pub fn with_destination<A: Into<Address>>(mut self, address: A) -> Self {
         self.destination = Some(address.into());
+        self.id = None;
+        self
+    }
+
+    /// Sets the `id` bound on a channel.
+    ///
+    /// If `source` or `destination` were previously set, they will be unset.
+    #[must_use]
+    pub fn with_id(mut self, id: ChannelId) -> Self {
+        self.id = Some(id);
+        self.source = None;
+        self.destination = None;
         self
     }
 
@@ -86,21 +107,27 @@ impl ChannelSelector {
             ChannelStatusDiscriminants::Open,
             ChannelStatusDiscriminants::PendingToClose,
         ])
-        .with_closure_time_range(Utc::now() + min_grace_period.unwrap_or_default()..)
+        .with_closure_time_range(chrono::Utc::now() + min_grace_period.unwrap_or_default()..)
     }
 
     /// Checks if the given [`channel`](ChannelEntry) satisfies the selector.
     pub fn satisfies(&self, channel: &ChannelEntry) -> bool {
-        if let Some(source) = &self.source
-            && channel.source != *source
-        {
-            return false;
-        }
+        if let Some(id) = &self.id {
+            if channel.get_id() != id {
+                return false;
+            }
+        } else {
+            if let Some(source) = &self.source
+                && channel.source != *source
+            {
+                return false;
+            }
 
-        if let Some(dst) = &self.destination
-            && channel.destination != *dst
-        {
-            return false;
+            if let Some(dst) = &self.destination
+                && channel.destination != *dst
+            {
+                return false;
+            }
         }
 
         if !self.allowed_states.is_empty() && !self.allowed_states.contains(&channel.status.discriminant()) {
