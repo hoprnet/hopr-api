@@ -31,6 +31,7 @@ pub trait HoprChainApi:
     + ChainEvents<Error = Self::ChainError>
     + ChainKeyOperations<Error = Self::ChainError>
     + ChainValues<Error = Self::ChainError>
+    + ChainReadTicketOperations<Error = Self::ChainError>
     + ChainWriteTicketOperations<Error = Self::ChainError>
 {
     type ChainError: std::error::Error + Send + Sync + 'static;
@@ -47,6 +48,7 @@ where
         + ChainEvents<Error = E>
         + ChainKeyOperations<Error = E>
         + ChainValues<Error = E>
+        + ChainReadTicketOperations<Error = E>
         + ChainWriteTicketOperations<Error = E>,
     E: std::error::Error + Send + Sync + 'static,
 {
