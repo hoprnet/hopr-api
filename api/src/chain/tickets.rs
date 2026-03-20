@@ -1,69 +1,7 @@
-use std::fmt::Formatter;
-
 use futures::future::BoxFuture;
 pub use hopr_types::internal::prelude::{RedeemableTicket, VerifiedTicket};
-use hopr_types::{internal::prelude::WinningProbability, primitive::balance::HoprBalance};
 
 use crate::chain::ChainReceipt;
-
-/// On-chain operations to read values related to tickets.
-///
-/// These operations are used in critical packet processing pipelines, and therefore,
-/// should not query the chain information directly, and they MUST NOT block.
-#[auto_impl::auto_impl(&, Box, Arc)]
-pub trait ChainReadTicketOperations {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    /// Retrieves the winning probability and ticket price for **outgoing** tickets,
-    /// with respect to the optionally pre-configured values.
-    ///
-    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
-    fn outgoing_ticket_values(
-        &self,
-        configured_wp: Option<WinningProbability>,
-        configured_price: Option<HoprBalance>,
-    ) -> Result<(WinningProbability, HoprBalance), Self::Error>;
-    /// Retrieves the expected minimum winning probability and ticket price for **incoming** tickets.
-    ///
-    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
-    fn incoming_ticket_values(&self) -> Result<(WinningProbability, HoprBalance), Self::Error>;
-}
-
-/// Result of [`redeem_tickets_via_selector`].
-///
-/// Contains tickets that were successfully redeemed, rejected or left untouched.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BatchRedemptionResult<E> {
-    /// Tickets which were successfully redeemed and
-    /// removed from the ticket database.
-    pub successful: Vec<(VerifiedTicket, ChainReceipt)>,
-    /// Tickets which were permanently rejected and removed from the ticket database.
-    pub rejected: Vec<(VerifiedTicket, String)>,
-    /// Tickets which could not be redeemed and will be retried later.
-    pub will_retry: Vec<(VerifiedTicket, E)>,
-}
-
-impl<E> Default for BatchRedemptionResult<E> {
-    fn default() -> Self {
-        Self {
-            successful: vec![],
-            rejected: vec![],
-            will_retry: vec![],
-        }
-    }
-}
-
-impl<E> std::fmt::Display for BatchRedemptionResult<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "redemption results - successful: {}, rejected: {}, retriable: {}",
-            self.successful.len(),
-            self.rejected.len(),
-            self.will_retry.len()
-        )
-    }
-}
 
 /// Errors that can occur during ticket redemption.
 #[derive(Debug, thiserror::Error)]
