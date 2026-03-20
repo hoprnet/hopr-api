@@ -1,10 +1,10 @@
-use futures::Stream;
+use futures::{Stream, StreamExt};
 pub use hopr_types::{
     internal::prelude::{ChannelId, VerifiedTicket},
     primitive::balance::HoprBalance,
 };
 
-use crate::chain::ChainWriteTicketOperations;
+use crate::chain::{ChainReadChannelOperations, ChainWriteTicketOperations, ChannelSelector};
 
 /// Contains ticket statistics for an incoming channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -98,4 +98,60 @@ pub trait TicketManagement {
     ///
     /// Usually the stats could be non-persistent, but it is a choice of the implementation.
     fn ticket_stats(&self, channel_id: Option<&ChannelId>) -> Result<ChannelStats, Self::Error>;
+}
+
+#[async_trait::async_trait]
+pub trait TicketManagementExt: TicketManagement {
+    /// Performs redemptions in multiple channels.
+    ///
+    /// This method queries the chain `client` for all incoming channels that are open or have a ticket redemption
+    /// window open (at least `min_grace_period` in the future) and optionally also matching the given `selector`.
+    /// It then creates a [redemption stream](TicketManagement::redeem_stream) for each channel that tries to redeem
+    /// individual winning tickets in the correct order.
+    ///
+    /// Tickets that are not worth at least `min_amount` are neglected.
+    ///
+    /// Incoming channels for which the redeem stream could not be created are skipped.
+    ///
+    /// The returned stream can be concurrently processed and guarantees that redeemable tickets
+    /// are processed in the correct order in their respective channels.
+    async fn redeem_in_channels<C>(
+        &self,
+        client: C,
+        selector: Option<ChannelSelector>,
+        min_amount: Option<HoprBalance>,
+        min_grace_period: Option<std::time::Duration>,
+    ) -> Result<
+        impl Stream<Item = Result<RedemptionResult, Self::Error>> + Send,
+        <C as ChainReadChannelOperations>::Error,
+    >
+    where
+        C: ChainReadChannelOperations + ChainWriteTicketOperations + Clone + Send + Sync + 'static,
+    {
+        let mut stream_group = futures_concurrency::stream::StreamGroup::new();
+        client
+            .stream_channels(
+                selector
+                    .unwrap_or_default()
+                    .with_destination(*client.me())
+                    .with_redeemable_channels(min_grace_period),
+            )
+            .await?
+            .filter_map(|channel| {
+                futures::future::ready(
+                    self.redeem_stream(client.clone(), *channel.get_id(), min_amount)
+                        .inspect_err(
+                            |error| tracing::error!(%error, %channel, "failed to open redeem stream for channel"),
+                        )
+                        .ok(),
+                )
+            })
+            .for_each(|stream| {
+                stream_group.insert(stream);
+                futures::future::ready(())
+            })
+            .await;
+
+        Ok(stream_group)
+    }
 }

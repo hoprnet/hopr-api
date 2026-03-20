@@ -47,6 +47,7 @@ auto_impl = { workspace = true, optional = true }
 atomic_enum = { workspace = true, optional = true }
 chrono = { workspace = true }
 futures = { workspace = true }
+futures-concurrency = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 serde = { workspace = true, optional = true }

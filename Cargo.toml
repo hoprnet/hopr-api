@@ -25,6 +25,7 @@ futures = { version = "0.3.32", default-features = false, features = [
   "std",
   "async-await",
 ] }
+futures-concurrency = "7.7.1"
 libp2p-identity = { version = "0.2.13", features = [
   "peerid",
   "ed25519",

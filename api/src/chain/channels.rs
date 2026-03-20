@@ -46,14 +46,14 @@ impl Default for ChannelSelector {
 }
 
 impl ChannelSelector {
-    /// Sets the `source` bound on channel.
+    /// Sets the `source` bound on a channel.
     #[must_use]
     pub fn with_source<A: Into<Address>>(mut self, address: A) -> Self {
         self.source = Some(address.into());
         self
     }
 
-    /// Sets the `destination` bound on channel.
+    /// Sets the `destination` bound on a channel.
     #[must_use]
     pub fn with_destination<A: Into<Address>>(mut self, address: A) -> Self {
         self.destination = Some(address.into());
@@ -74,6 +74,19 @@ impl ChannelSelector {
     pub fn with_closure_time_range<T: RangeBounds<DateTime>>(mut self, range: T) -> Self {
         self.closure_time_range = (range.start_bound().cloned(), range.end_bound().cloned());
         self
+    }
+
+    /// Convenience method to include all effectively open channels -
+    /// channels which are open or pending to close with closure time in the future with at least `min_grace_period`.
+    ///
+    /// In these channels, ticket redemption of incoming tickets is still possible.
+    #[must_use]
+    pub fn with_redeemable_channels(self, min_grace_period: Option<std::time::Duration>) -> Self {
+        self.with_allowed_states(&[
+            ChannelStatusDiscriminants::Open,
+            ChannelStatusDiscriminants::PendingToClose,
+        ])
+        .with_closure_time_range(Utc::now() + min_grace_period.unwrap_or_default()..)
     }
 
     /// Checks if the given [`channel`](ChannelEntry) satisfies the selector.
