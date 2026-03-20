@@ -5,7 +5,7 @@ pub use hopr_types::{
 };
 
 /// Contains ticket statistics for an incoming channel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChannelStats {
     /// Total number of winning tickets received in this channel.
