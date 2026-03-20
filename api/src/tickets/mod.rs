@@ -163,7 +163,7 @@ impl<T: TicketManagement + ?Sized> TicketManagementExt for T {}
 
 #[cfg(test)]
 mod tests {
-    use futures::{StreamExt, stream};
+    use futures::{StreamExt, TryStreamExt, stream};
     use hopr_types::{crypto::prelude::Keypair, internal::prelude::*, primitive::prelude::Address};
     use mockall::{mock, predicate::*};
 
@@ -212,7 +212,7 @@ mod tests {
             type Error = std::io::Error;
             async fn redeem_ticket<'a>(
                 &'a self,
-                ticket: hopr_types::internal::prelude::RedeemableTicket,
+                ticket: RedeemableTicket,
             ) -> Result<
                 futures::future::BoxFuture<'a, Result<(VerifiedTicket, hopr_types::crypto::prelude::Hash), crate::chain::TicketRedeemError<std::io::Error>>>,
                 crate::chain::TicketRedeemError<std::io::Error>,
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_redeem_in_channels_empty() {
+    async fn test_redeem_in_channels_empty() -> anyhow::Result<()> {
         let mock_tm = MockTicketManager::new();
         let mut mock_client = MockChainClient::new();
 
@@ -235,10 +235,12 @@ mod tests {
             .expect_stream_channels()
             .returning(|_| Ok(stream::empty().boxed()));
 
-        let result = mock_tm.redeem_in_channels(mock_client, None, None, None).await.unwrap();
+        let result = mock_tm.redeem_in_channels(mock_client, None, None, None).await?;
 
         let results: Vec<_> = result.collect().await;
         assert!(results.is_empty());
+
+        Ok(())
     }
 
     fn generate_tickets_in_channel(issuer: &ChainKeypair, channel: &ChannelEntry, count: usize) -> Vec<VerifiedTicket> {
@@ -259,7 +261,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_redeem_in_channels_multiple_channels() {
+    async fn test_redeem_in_channels_multiple_channels() -> anyhow::Result<()> {
         let mut mock_tm = MockTicketManager::new();
         let mut mock_client = MockChainClient::new();
 
@@ -274,15 +276,14 @@ mod tests {
             .destination(my_address)
             .balance(HoprBalance::default())
             .status(ChannelStatus::Open)
-            .build()
-            .unwrap();
+            .build()?;
+
         let channel_2 = ChannelBuilder::default()
             .source(&source_2)
             .destination(my_address)
             .balance(HoprBalance::default())
             .status(ChannelStatus::Open)
-            .build()
-            .unwrap();
+            .build()?;
 
         let channel_1_clone = channel_1.clone();
         let channel_2_clone = channel_2.clone();
@@ -325,12 +326,11 @@ mod tests {
                     .boxed())
             });
 
-        let result = mock_tm
-            .redeem_in_channels(mock_client, None, min_amount, None)
-            .await
-            .unwrap();
+        let result = mock_tm.redeem_in_channels(mock_client, None, min_amount, None).await?;
 
-        let results: Vec<_> = result.collect().await;
+        let results: Vec<_> = result.try_collect().await?;
         assert_eq!(results.len(), tickets_1.len() + tickets_2.len());
+
+        Ok(())
     }
 }
