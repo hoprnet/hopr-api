@@ -29,7 +29,7 @@ pub enum RedemptionResult {
     /// Ticket has been neglected because its value was lower than the threshold.
     #[strum(to_string = "neglected {0} due to low value")]
     ValueTooLow(VerifiedTicket),
-    /// Ticket has been rejected on-chain with for the given reason.
+    /// Ticket has been rejected on-chain for the given reason.
     #[strum(to_string = "rejected {0} on-chain: {1}")]
     RejectedOnChain(VerifiedTicket, String),
 }
@@ -51,7 +51,7 @@ impl AsRef<VerifiedTicket> for RedemptionResult {
 /// extracted (removed) from the queue:
 /// 1. Successful on-chain redemption (happens due to a successful on-chain
 ///    [redemption](crate::chain::ChainWriteTicketOperations::redeem_ticket) operation).
-/// 2. Unsuccessful on-chain redemption (on-rejection happens due to a failed on-chain
+/// 2. Unsuccessful on-chain redemption (rejection happens due to a failed on-chain
 ///    [redemption](crate::chain::ChainWriteTicketOperations::redeem_ticket) operation).
 /// 3. Neglection without trying to redeem it on-chain (can happen for various reasons, e.g.: a channel being closed
 ///    prior to a ticket being redeemed, low-value ticket ... etc.).
