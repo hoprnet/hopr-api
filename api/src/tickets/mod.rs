@@ -80,7 +80,7 @@ pub trait TicketManagement {
         client: C,
         channel_id: ChannelId,
         min_amount: Option<HoprBalance>,
-    ) -> Result<impl TryStream<Ok = RedemptionResult, Error = Self::Error>, Self::Error>;
+    ) -> Result<impl TryStream<Ok = RedemptionResult, Error = Self::Error> + Send, Self::Error>;
     /// Neglects tickets in the given channel up to the `max_ticket_index` (inclusive, or all tickets if `None`).
     ///
     /// Returns the vector of neglected tickets.
