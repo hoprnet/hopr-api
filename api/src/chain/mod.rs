@@ -31,6 +31,7 @@ pub trait HoprChainApi:
     + ChainEvents<Error = Self::ChainError>
     + ChainKeyOperations<Error = Self::ChainError>
     + ChainValues<Error = Self::ChainError>
+    + ChainReadTicketOperations<Error = Self::ChainError>
     + ChainWriteTicketOperations<Error = Self::ChainError>
 {
     type ChainError: std::error::Error + Send + Sync + 'static;
@@ -47,6 +48,7 @@ where
         + ChainEvents<Error = E>
         + ChainKeyOperations<Error = E>
         + ChainValues<Error = E>
+        + ChainReadTicketOperations<Error = E>
         + ChainWriteTicketOperations<Error = E>,
     E: std::error::Error + Send + Sync + 'static,
 {
@@ -103,7 +105,6 @@ impl<'c, R: ChainKeyOperations + ChainReadChannelOperations + Sync> hopr_types::
     ) -> Result<Option<hopr_types::crypto::prelude::OffchainPublicKey>, hopr_types::internal::errors::PathError> {
         self.0
             .chain_key_to_packet_key(address)
-            .await
             .map_err(|e| hopr_types::internal::errors::PathError::UnknownPeer(format!("{address}: {e}")))
     }
 
@@ -113,7 +114,6 @@ impl<'c, R: ChainKeyOperations + ChainReadChannelOperations + Sync> hopr_types::
     ) -> Result<Option<hopr_types::primitive::prelude::Address>, hopr_types::internal::errors::PathError> {
         self.0
             .packet_key_to_chain_key(key)
-            .await
             .map_err(|e| hopr_types::internal::errors::PathError::UnknownPeer(format!("{key}: {e}")))
     }
 
@@ -122,7 +122,7 @@ impl<'c, R: ChainKeyOperations + ChainReadChannelOperations + Sync> hopr_types::
         src: &hopr_types::primitive::prelude::Address,
         dst: &hopr_types::primitive::prelude::Address,
     ) -> Result<Option<ChannelEntry>, hopr_types::internal::errors::PathError> {
-        self.0.channel_by_parties(src, dst).await.map_err(|e| {
+        self.0.channel_by_parties(src, dst).map_err(|e| {
             hopr_types::internal::errors::PathError::MissingChannel(src.to_string(), format!("{dst}: {e}"))
         })
     }

@@ -110,7 +110,6 @@ impl ChannelSelector {
 }
 
 /// On-chain read operations regarding channels.
-#[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait ChainReadChannelOperations {
     type Error: Error + Send + Sync + 'static;
@@ -119,18 +118,15 @@ pub trait ChainReadChannelOperations {
     fn me(&self) -> &Address;
 
     /// Returns a single channel given `src` and `dst`.
-    async fn channel_by_parties(&self, src: &Address, dst: &Address) -> Result<Option<ChannelEntry>, Self::Error> {
-        self.channel_by_id(&generate_channel_id(src, dst)).await
+    fn channel_by_parties(&self, src: &Address, dst: &Address) -> Result<Option<ChannelEntry>, Self::Error> {
+        self.channel_by_id(&generate_channel_id(src, dst))
     }
 
     /// Returns a single channel given `channel_id`.
-    async fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, Self::Error>;
+    fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, Self::Error>;
 
     /// Returns a stream of channels given the [`ChannelSelector`].
-    async fn stream_channels<'a>(
-        &'a self,
-        selector: ChannelSelector,
-    ) -> Result<BoxStream<'a, ChannelEntry>, Self::Error>;
+    fn stream_channels<'a>(&'a self, selector: ChannelSelector) -> Result<BoxStream<'a, ChannelEntry>, Self::Error>;
 }
 
 /// On-chain write operations regarding channels.

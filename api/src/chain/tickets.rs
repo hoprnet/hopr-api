@@ -1,48 +1,32 @@
-use std::fmt::Formatter;
-
-use futures::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
-use hopr_types::internal::prelude::AcknowledgedTicketStatus;
-pub use hopr_types::internal::prelude::{RedeemableTicket, VerifiedTicket};
-
-use crate::{
-    chain::ChainReceipt,
-    db::{HoprDbTicketOperations, TicketMarker, TicketSelector},
+use futures::future::BoxFuture;
+pub use hopr_types::{
+    internal::prelude::{RedeemableTicket, VerifiedTicket},
+    primitive::prelude::HoprBalance,
 };
 
-/// Result of [`redeem_tickets_via_selector`].
+use crate::chain::{ChainReceipt, WinningProbability};
+
+/// On-chain operations to read values related to tickets.
 ///
-/// Contains tickets that were successfully redeemed, rejected or left untouched.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BatchRedemptionResult<E> {
-    /// Tickets which were successfully redeemed and
-    /// removed from the ticket database.
-    pub successful: Vec<(VerifiedTicket, ChainReceipt)>,
-    /// Tickets which were permanently rejected and removed from the ticket database.
-    pub rejected: Vec<(VerifiedTicket, String)>,
-    /// Tickets which could not be redeemed and will be retried later.
-    pub will_retry: Vec<(VerifiedTicket, E)>,
-}
+/// These operations are used in critical packet processing pipelines, and therefore,
+/// should not query the chain information directly, and they MUST NOT block.
+#[auto_impl::auto_impl(&, Box, Arc)]
+pub trait ChainReadTicketOperations {
+    type Error: std::error::Error + Send + Sync + 'static;
 
-impl<E> Default for BatchRedemptionResult<E> {
-    fn default() -> Self {
-        Self {
-            successful: vec![],
-            rejected: vec![],
-            will_retry: vec![],
-        }
-    }
-}
-
-impl<E> std::fmt::Display for BatchRedemptionResult<E> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "redemption results - successful: {}, rejected: {}, retriable: {}",
-            self.successful.len(),
-            self.rejected.len(),
-            self.will_retry.len()
-        )
-    }
+    /// Retrieves the winning probability and ticket price for **outgoing** tickets,
+    /// with respect to the optionally pre-configured values.
+    ///
+    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
+    fn outgoing_ticket_values(
+        &self,
+        configured_wp: Option<WinningProbability>,
+        configured_price: Option<HoprBalance>,
+    ) -> Result<(WinningProbability, HoprBalance), Self::Error>;
+    /// Retrieves the expected minimum winning probability and ticket price for **incoming** tickets.
+    ///
+    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
+    fn incoming_ticket_values(&self) -> Result<(WinningProbability, HoprBalance), Self::Error>;
 }
 
 /// Errors that can occur during ticket redemption.
@@ -71,80 +55,4 @@ pub trait ChainWriteTicketOperations {
         BoxFuture<'a, Result<(VerifiedTicket, ChainReceipt), TicketRedeemError<Self::Error>>>,
         TicketRedeemError<Self::Error>,
     >;
-
-    /// Fetches a batch of tickets via [`selector`](TicketSelector) to [`HoprDbTicketOperations`]
-    /// and performs batched ticket redemption.
-    ///
-    /// The function takes care of properly marking the tickets in the DB as being redeemed and
-    /// also properly unmarking or removing them on redemption success or failure.
-    ///
-    /// The method waits until all matched tickets are either redeemed or fail to redeem,
-    /// reporting the results in the [`BatchRedemptionResult`] object.
-    async fn redeem_tickets_via_selectors<Db, S, I>(
-        &self,
-        db: &Db,
-        selectors: I,
-    ) -> Result<BatchRedemptionResult<Self::Error>, Db::Error>
-    where
-        Db: HoprDbTicketOperations + Sync,
-        I: IntoIterator<Item = S> + Send,
-        S: Into<TicketSelector>,
-    {
-        // Make sure the selector only matches untouched tickets
-        let selectors = selectors
-            .into_iter()
-            .map(|sel| sel.into().with_state(AcknowledgedTicketStatus::Untouched))
-            .collect::<Vec<_>>();
-
-        // Collect the tickets first so we don't hold up the DB connection
-        let mut tickets = db
-            .update_ticket_states_and_fetch(selectors, AcknowledgedTicketStatus::BeingRedeemed)
-            .await?
-            .collect::<Vec<_>>()
-            .await;
-
-        if tickets.is_empty() {
-            return Ok(BatchRedemptionResult::default());
-        }
-
-        // Make sure that the tickets are sorted
-        tickets.sort();
-
-        let futures = FuturesUnordered::new();
-        for ticket in tickets {
-            match self.redeem_ticket(ticket).await {
-                Ok(redeem_tracker) => futures.push(redeem_tracker),
-                Err(error) => futures.push(futures::future::err(error).boxed()),
-            }
-        }
-
-        Ok(futures
-            .fold(BatchRedemptionResult::default(), |mut res, item| async move {
-                match item {
-                    Ok((ticket, receipt)) => {
-                        if let Err(error) = db.mark_tickets_as([&ticket], TicketMarker::Redeemed).await {
-                            tracing::error!(%error, "failed to mark ticket as redeemed");
-                        }
-                        res.successful.push((ticket, receipt));
-                    }
-                    Err(TicketRedeemError::Rejected(ticket, reason)) => {
-                        if let Err(error) = db.mark_tickets_as([&ticket], TicketMarker::Rejected).await {
-                            tracing::error!(%error, "failed to mark ticket as rejected");
-                        }
-                        res.rejected.push((ticket, reason));
-                    }
-                    Err(TicketRedeemError::ProcessingError(ticket, proc_error)) => {
-                        if let Err(error) = db
-                            .update_ticket_states([&ticket], AcknowledgedTicketStatus::Untouched)
-                            .await
-                        {
-                            tracing::error!(%error, "failed to update ticket state to untouched");
-                        }
-                        res.will_retry.push((ticket, proc_error));
-                    }
-                }
-                res
-            })
-            .await)
-    }
 }
