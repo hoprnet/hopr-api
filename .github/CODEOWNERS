@@ -2,12 +2,11 @@
 # Code owners are automatically requested for review when someone opens a pull request.
 
 # Default owners for everything
-* @Teebor-Choka
+* @ausias-armesto @jeandemeusy @NumberFour8 @QYuQianchen @Teebor-Choka @tolbrino
 
 # Build and configuration
-*.nix @Teebor-Choka
-*.toml @Teebor-Choka
-flake.lock @Teebor-Choka
+*.nix @ausias-armesto @Teebor-Choka @tolbrino
+flake.lock @ausias-armesto @Teebor-Choka @tolbrino
 
 # GitHub Actions and CI/CD
-/.github/ @Teebor-Choka
+/.github/ @ausias-armesto @Teebor-Choka @tolbrino
