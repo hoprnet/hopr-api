@@ -2160,6 +2160,7 @@ dependencies = [
  "serde",
  "strum 0.28.0",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
