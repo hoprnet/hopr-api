@@ -1,4 +1,4 @@
-use futures::TryStream;
+use futures::Stream;
 pub use hopr_types::{
     internal::prelude::{ChannelId, VerifiedTicket},
     primitive::balance::HoprBalance,
@@ -80,7 +80,7 @@ pub trait TicketManagement {
         client: C,
         channel_id: ChannelId,
         min_amount: Option<HoprBalance>,
-    ) -> Result<impl TryStream<Ok = RedemptionResult, Error = Self::Error> + Send, Self::Error>;
+    ) -> Result<impl Stream<Item = Result<RedemptionResult, Self::Error>> + Send, Self::Error>;
     /// Neglects tickets in the given channel up to the `max_ticket_index` (inclusive, or all tickets if `None`).
     ///
     /// Returns the vector of neglected tickets.
