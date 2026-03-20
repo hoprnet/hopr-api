@@ -75,7 +75,7 @@ pub trait TicketManagement {
     /// The stream terminates if there's a processing error (passing the error via the stream), the ticket that
     /// triggered the error remains in the queue and can be attempted to be redeemed once `redeem_stream` is called
     /// again.
-    fn redeem_stream<C: ChainWriteTicketOperations>(
+    fn redeem_stream<C: ChainWriteTicketOperations + Send + Sync + 'static>(
         &self,
         client: C,
         channel_id: ChannelId,
