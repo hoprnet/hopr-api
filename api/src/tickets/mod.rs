@@ -4,6 +4,8 @@ pub use hopr_types::{
     primitive::balance::HoprBalance,
 };
 
+use crate::chain::ChainWriteTicketOperations;
+
 /// Contains ticket statistics for an incoming channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -30,6 +32,16 @@ pub enum RedemptionResult {
     /// Ticket has been rejected on-chain with for the given reason.
     #[strum(to_string = "rejected {0} on-chain: {1}")]
     RejectedOnChain(VerifiedTicket, String),
+}
+
+impl AsRef<VerifiedTicket> for RedemptionResult {
+    fn as_ref(&self) -> &VerifiedTicket {
+        match self {
+            RedemptionResult::Redeemed(ticket) => ticket,
+            RedemptionResult::ValueTooLow(ticket) => ticket,
+            RedemptionResult::RejectedOnChain(ticket, _) => ticket,
+        }
+    }
 }
 
 /// API for managing winning (redeemable) tickets in incoming channels.
@@ -63,8 +75,9 @@ pub trait TicketManagement {
     /// The stream terminates if there's a processing error (passing the error via the stream), the ticket that
     /// triggered the error remains in the queue and can be attempted to be redeemed once `redeem_stream` is called
     /// again.
-    fn redeem_stream(
+    fn redeem_stream<C: ChainWriteTicketOperations>(
         &self,
+        client: C,
         channel_id: ChannelId,
         min_amount: Option<HoprBalance>,
     ) -> Result<impl TryStream<Ok = RedemptionResult, Error = Self::Error>, Self::Error>;
