@@ -65,4 +65,6 @@ hopr-types = { workspace = true, features = [
 [dev-dependencies]
 anyhow = { workspace = true }
 insta = { workspace = true }
+mockall = { workspace = true }
 serde = { workspace = true }
+tokio = { version = "1.43", features = ["macros", "rt-multi-thread"] }

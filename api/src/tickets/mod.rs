@@ -160,3 +160,177 @@ pub trait TicketManagementExt: TicketManagement {
 }
 
 impl<T: TicketManagement + ?Sized> TicketManagementExt for T {}
+
+#[cfg(test)]
+mod tests {
+    use futures::{StreamExt, stream};
+    use hopr_types::{crypto::prelude::Keypair, internal::prelude::*, primitive::prelude::Address};
+    use mockall::{mock, predicate::*};
+
+    use super::*;
+    use crate::{
+        ChainKeypair,
+        chain::{ChainReadChannelOperations, ChainWriteTicketOperations},
+    };
+
+    mock! {
+        pub TicketManager {}
+        #[allow(refining_impl_trait)]
+        impl TicketManagement for TicketManager {
+            type Error = std::io::Error;
+            fn redeem_stream<C: ChainWriteTicketOperations + Send + Sync + 'static>(
+                &self,
+                client: C,
+                channel_id: ChannelId,
+                min_amount: Option<HoprBalance>,
+            ) -> Result<stream::BoxStream<'static, Result<RedemptionResult, std::io::Error>>, std::io::Error>;
+
+            fn neglect_tickets(
+                &self,
+                channel_id: &ChannelId,
+                max_ticket_index: Option<u64>,
+            ) -> Result<Vec<VerifiedTicket>, std::io::Error>;
+
+            fn ticket_stats<'a>(&self, channel_id: Option<&'a ChannelId>) -> Result<ChannelStats, std::io::Error>;
+        }
+    }
+
+    mock! {
+        pub ChainClient {}
+        #[async_trait::async_trait]
+        impl ChainReadChannelOperations for ChainClient {
+            type Error = std::io::Error;
+            fn me(&self) -> &Address;
+            async fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, std::io::Error>;
+            async fn stream_channels<'a>(
+                &'a self,
+                selector: ChannelSelector,
+            ) -> Result<stream::BoxStream<'a, ChannelEntry>, std::io::Error>;
+        }
+        #[async_trait::async_trait]
+        impl ChainWriteTicketOperations for ChainClient {
+            type Error = std::io::Error;
+            async fn redeem_ticket<'a>(
+                &'a self,
+                ticket: hopr_types::internal::prelude::RedeemableTicket,
+            ) -> Result<
+                futures::future::BoxFuture<'a, Result<(VerifiedTicket, hopr_types::crypto::prelude::Hash), crate::chain::TicketRedeemError<std::io::Error>>>,
+                crate::chain::TicketRedeemError<std::io::Error>,
+            >;
+        }
+        impl Clone for ChainClient {
+            fn clone(&self) -> Self;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_redeem_in_channels_empty() {
+        let mock_tm = MockTicketManager::new();
+        let mut mock_client = MockChainClient::new();
+
+        let my_address = Address::default();
+        mock_client.expect_me().return_const(my_address);
+
+        mock_client
+            .expect_stream_channels()
+            .returning(|_| Ok(stream::empty().boxed()));
+
+        let result = mock_tm.redeem_in_channels(mock_client, None, None, None).await.unwrap();
+
+        let results: Vec<_> = result.collect().await;
+        assert!(results.is_empty());
+    }
+
+    fn generate_tickets_in_channel(issuer: &ChainKeypair, channel: &ChannelEntry, count: usize) -> Vec<VerifiedTicket> {
+        assert_eq!(issuer.public().to_address(), channel.source);
+        (0..count)
+            .map(|index| {
+                TicketBuilder::default()
+                    .counterparty(channel.destination)
+                    .amount(1)
+                    .win_prob(WinningProbability::ALWAYS)
+                    .index(index as u64)
+                    .channel_epoch(channel.channel_epoch)
+                    .eth_challenge(Default::default())
+                    .build_signed(&issuer, &Default::default())
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_redeem_in_channels_multiple_channels() {
+        let mut mock_tm = MockTicketManager::new();
+        let mut mock_client = MockChainClient::new();
+
+        let my_address = Address::from([0u8; 20]);
+        mock_client.expect_me().return_const(my_address);
+
+        let source_1 = ChainKeypair::random();
+        let source_2 = ChainKeypair::random();
+
+        let channel_1 = ChannelBuilder::default()
+            .source(&source_1)
+            .destination(my_address)
+            .balance(HoprBalance::default())
+            .status(ChannelStatus::Open)
+            .build()
+            .unwrap();
+        let channel_2 = ChannelBuilder::default()
+            .source(&source_2)
+            .destination(my_address)
+            .balance(HoprBalance::default())
+            .status(ChannelStatus::Open)
+            .build()
+            .unwrap();
+
+        let channel_1_clone = channel_1.clone();
+        let channel_2_clone = channel_2.clone();
+        let channel_1_id = *channel_1.get_id();
+        let channel_2_id = *channel_2.get_id();
+
+        mock_client
+            .expect_stream_channels()
+            .with(function(move |selector: &ChannelSelector| {
+                selector.destination == Some(my_address)
+            }))
+            .returning(move |_| Ok(stream::iter(vec![channel_1_clone.clone(), channel_2_clone.clone()]).boxed()));
+
+        mock_client.expect_clone().returning(MockChainClient::default);
+
+        let min_amount = Some(HoprBalance::from(100));
+
+        let tickets_1 = generate_tickets_in_channel(&source_1, &channel_1, 10);
+        let tickets_2 = generate_tickets_in_channel(&source_2, &channel_2, 10);
+
+        let tickets_1_clone = tickets_1.clone();
+        mock_tm
+            .expect_redeem_stream::<MockChainClient>()
+            .once()
+            .with(always(), eq(channel_1_id), eq(min_amount))
+            .return_once(|_, _, _| {
+                Ok(stream::iter(tickets_1_clone)
+                    .map(|t| Ok(RedemptionResult::Redeemed(t)))
+                    .boxed())
+            });
+
+        let tickets_2_clone = tickets_2.clone();
+        mock_tm
+            .expect_redeem_stream::<MockChainClient>()
+            .once()
+            .with(always(), eq(channel_2_id), eq(min_amount))
+            .return_once(|_, _, _| {
+                Ok(stream::iter(tickets_2_clone)
+                    .map(|t| Ok(RedemptionResult::Redeemed(t)))
+                    .boxed())
+            });
+
+        let result = mock_tm
+            .redeem_in_channels(mock_client, None, min_amount, None)
+            .await
+            .unwrap();
+
+        let results: Vec<_> = result.collect().await;
+        assert_eq!(results.len(), tickets_1.len() + tickets_2.len());
+    }
+}
