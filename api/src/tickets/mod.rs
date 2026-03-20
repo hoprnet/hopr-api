@@ -50,7 +50,7 @@ pub enum RedemptionResult {
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait TicketManagement {
     type Error: std::error::Error + Send + Sync + 'static;
-    /// Creates a stream that tries to individual winning tickets from the given channel in the correct order.
+    /// Creates a stream that tries to redeem individual winning tickets from the given channel in the correct order.
     ///
     /// All errors that are due to tickets being invalid (found to be unredeemable) are handled by returning a
     /// [`RedemptionResult::RejectedOnChain`], rejected from the queue, and the stream continues with the next
