@@ -23,6 +23,7 @@ full = [
   "graph",
   "node",
   "serde",
+  "tickets",
   "types-chain",
   "types-random",
   "types-fixed-rng",
@@ -33,7 +34,8 @@ db = ["dep:auto_impl"]
 network = []
 graph = ["dep:auto_impl"]
 node = ["chain", "db", "graph", "network", "dep:atomic_enum"]
-serde = ["hopr-types/serde"]
+serde = ["hopr-types/serde", "dep:serde"]
+tickets = ["dep:auto_impl"]
 types-random = ["hopr-types/random"]
 types-fixed-rng = ["hopr-types/fixed-rng"]
 types-chain = ["hopr-types/chain"]
@@ -47,9 +49,9 @@ chrono = { workspace = true }
 futures = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
+serde = { workspace = true, optional = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 
 hopr-types = { workspace = true, features = [
   "crypto",
