@@ -100,6 +100,9 @@ pub trait TicketManagement {
     fn ticket_stats(&self, channel_id: Option<&ChannelId>) -> Result<ChannelStats, Self::Error>;
 }
 
+/// Asynchronous extension trait for [`TicketManagement`] that adds convenience methods for ticket management.
+///
+/// Automatically implemented for each type that implements `TicketManagement`.
 #[async_trait::async_trait]
 pub trait TicketManagementExt: TicketManagement {
     /// Performs redemptions in multiple channels.
@@ -155,3 +158,5 @@ pub trait TicketManagementExt: TicketManagement {
         Ok(stream_group)
     }
 }
+
+impl<T: TicketManagement + ?Sized> TicketManagementExt for T {}
