@@ -25,7 +25,7 @@ jobs:
       CI: "true"
     steps:
       - name: Run unit tests
-        uses: hoprnet/hopr-workflows/actions/nix-action@04bef49c02b8d5407a49dc1de42d08e727086180
+        uses: hoprnet/hopr-workflows/actions/nix-action@9ffe6bb3713d11b1df070fb50546bb4321d8c693
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
@@ -40,7 +40,7 @@ jobs:
 #     CI: "true"
 #   steps:
 #     - name: Run integration tests
-#       uses: hoprnet/hopr-workflows/actions/nix-action@04bef49c02b8d5407a49dc1de42d08e727086180
+#       uses: hoprnet/hopr-workflows/actions/nix-action@9ffe6bb3713d11b1df070fb50546bb4321d8c693
 #       with:
 #         repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 #         ref: ${{ github.event.pull_request.head.ref || github.ref }}
