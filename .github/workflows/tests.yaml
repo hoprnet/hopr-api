@@ -24,23 +24,12 @@ jobs:
     env:
       CI: "true"
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
-        with:
-          disable-sudo: true
-          egress-policy: audit
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
-          persist-credentials: false
-      - name: Install Nix
-        uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run unit tests
-        run: nix develop -c cargo test --lib --all-features
+        uses: hoprnet/hopr-workflows/actions/nix-action@348f8878a2bc6e1f4f5be0e98ffc7b3f7a79cb67
+        with:
+          source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          command: nix develop -c cargo test --lib --all-features
 
 # tests-integration:
 #   name: Integration Tests
@@ -49,23 +38,10 @@ jobs:
 #   env:
 #     CI: "true"
 #   steps:
-#     - name: Harden Runner
-#       uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
-#       with:
-#         disable-sudo: true
-#         egress-policy: audit
-
-#     - name: Checkout repository
-#       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+#     - name: Run integration tests
+#       uses: hoprnet/hopr-workflows/actions/nix-action@9ffe6bb3713d11b1df070fb50546bb4321d8c693
 #       with:
 #         repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 #         ref: ${{ github.event.pull_request.head.ref || github.ref }}
-#         persist-credentials: false
-
-#     - name: Install Nix
-#       uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31
-#       with:
 #         github_access_token: ${{ secrets.GITHUB_TOKEN }}
-
-#     - name: Run integration tests
-#       run: nix develop -c cargo test --test '*' -- --test-threads=1
+#         command: nix develop -c cargo test --test '*' -- --test-threads=1
