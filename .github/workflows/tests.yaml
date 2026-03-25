@@ -25,7 +25,7 @@ jobs:
       CI: "true"
     steps:
       - name: Run unit tests
-        uses: hoprnet/hopr-workflows/actions/nix-action@348f8878a2bc6e1f4f5be0e98ffc7b3f7a79cb67
+        uses: hoprnet/hopr-workflows/actions/nix-action@c2aca7e56d25c4a786049ccf816c7f1af8721de8 # nix-action-v1
         with:
           source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -39,7 +39,7 @@ jobs:
 #     CI: "true"
 #   steps:
 #     - name: Run integration tests
-#       uses: hoprnet/hopr-workflows/actions/nix-action@9ffe6bb3713d11b1df070fb50546bb4321d8c693
+#       uses: hoprnet/hopr-workflows/actions/nix-action@c2aca7e56d25c4a786049ccf816c7f1af8721de8 # nix-action-v1
 #       with:
 #         repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 #         ref: ${{ github.event.pull_request.head.ref || github.ref }}
