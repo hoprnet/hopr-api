@@ -4,6 +4,9 @@ resolver = "2"
 
 members = ["api"]
 
+[workspace.metadata.crane]
+name = "hopr-api"
+
 [workspace.package]
 version = "1.4.0"
 authors = ["HOPR Association <tech@hoprnet.org>"]

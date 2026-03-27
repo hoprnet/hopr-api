@@ -8,7 +8,9 @@
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
     crane.url = "github:ipetkov/crane/v0.23.0";
-    nix-lib.url = "github:hoprnet/nix-lib";
+
+    # HOPR Nix Library (provides flake-utils and reusable build functions)
+    nix-lib.url = "github:hoprnet/nix-lib/v1.1.0";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
     flake-root.url = "github:srid/flake-root";
@@ -59,8 +61,26 @@
           pkgs = import nixpkgs { inherit localSystem overlays; };
           pkgs-unstable = import nixpkgs-unstable { inherit localSystem overlays; };
 
+          # Platform information
+          buildPlatform = pkgs.stdenv.buildPlatform;
+
           # Import nix-lib for shared Nix utilities
           nixLib = nix-lib.lib.${system};
+
+          # Create all Rust builders for cross-compilation using nix-lib
+          builders = nixLib.mkRustBuilders {
+            inherit localSystem;
+            rustToolchainFile = ./rust-toolchain.toml;
+          };
+
+          hoprApiPackages = import ./nix/packages/hopr-api.nix {
+            inherit
+              builders
+              nixLib
+              self
+              lib
+              ;
+          };
 
           # Load nightly toolchain from file for rustfmt
           nightlyToolchain = pkgs.rust-bin.selectLatestNightlyWith (
@@ -75,51 +95,6 @@
             export DYLD_LIBRARY_PATH="${nightlyToolchain}/lib:$DYLD_LIBRARY_PATH"
             exec "${nightlyToolchain}/bin/rustfmt" "$@"
           '';
-
-          craneLib = (crane.mkLib pkgs).overrideToolchain (p: p.rust-bin.stable.latest.default);
-          crateInfo = craneLib.crateNameFromCargoToml {
-            cargoToml = ./api/Cargo.toml;
-          };
-
-          rust-builder-local = nixLib.mkRustBuilder {
-            inherit localSystem;
-            rustToolchainFile = ./rust-toolchain.toml;
-          };
-
-          fs = lib.fileset;
-
-          depsSrc = nixLib.mkDepsSrc {
-            root = ./.;
-            inherit fs;
-          };
-          src = nixLib.mkSrc {
-            root = ./.;
-            inherit fs;
-          };
-          testSrc = nixLib.mkTestSrc {
-            root = ./.;
-            inherit fs;
-            extraFiles = [
-              (fs.fileFilter (file: file.hasExt "snap") ./.)
-            ];
-          };
-
-          buildArgs = {
-            inherit src depsSrc;
-            cargoExtraArgs = "-p hopr-api";
-            cargoToml = ./api/Cargo.toml;
-          };
-
-          clippy = rust-builder-local.callPackage nixLib.mkRustPackage (buildArgs // { runClippy = true; });
-
-          test-unit = rust-builder-local.callPackage nixLib.mkRustPackage (
-            buildArgs
-            // {
-              src = testSrc;
-              runTests = true;
-              cargoExtraArgs = "--lib";
-            }
-          );
 
           pre-commit-check = pre-commit.lib.${system}.run {
             src = ./.;
@@ -250,15 +225,14 @@
             };
           };
 
-          checks = { inherit clippy; };
+          checks = { inherit (hoprApiPackages) clippy; };
 
           apps = {
             check = run-check;
             audit = run-audit;
           };
 
-          packages = {
-            inherit test-unit;
+          packages = hoprApiPackages // {
             inherit pre-commit-check;
           };
 
