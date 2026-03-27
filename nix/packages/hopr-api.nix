@@ -61,7 +61,7 @@ in
   unit-test = buildLib builders.local {
     src = testSrc;
     runTests = true;
-    cargoExtraArgs = "--lib --all-features";
+    cargoExtraArgs = "--all-features";
   };
 
   docs = buildLib builders.localNightly { buildDocs = true; };
