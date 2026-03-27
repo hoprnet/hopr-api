@@ -29,4 +29,4 @@ jobs:
         with:
           source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
           cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          command: nix run .#unit-test
+          command: nix build -L .#unit-test
