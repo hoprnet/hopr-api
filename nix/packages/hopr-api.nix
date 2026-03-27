@@ -58,10 +58,10 @@ in
 
   clippy = buildLib builders.local { runClippy = true; };
 
-  test = buildLib builders.local {
+  unit-test = buildLib builders.local {
     src = testSrc;
     runTests = true;
-    cargoExtraArgs = "--lib";
+    cargoExtraArgs = "--lib --all-features";
   };
 
   docs = buildLib builders.localNightly { buildDocs = true; };

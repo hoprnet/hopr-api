@@ -193,9 +193,6 @@
             settings.formatter.shfmt.includes = [
               "*.sh"
             ];
-            settings.formatter.shfmt.excludes = [
-              "nix/setup-hook-darwin.sh"
-            ];
 
             programs.yamlfmt.enable = true;
             settings.formatter.yamlfmt.includes = [
