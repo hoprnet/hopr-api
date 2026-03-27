@@ -8,7 +8,7 @@ members = ["api"]
 name = "hopr-api"
 
 [workspace.package]
-version = "1.3.0"
+version = "1.4.0"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
 repository = "https://github.com/hoprnet/hopr-api"
