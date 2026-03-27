@@ -16,6 +16,9 @@ pub struct ChannelStats {
     pub unredeemed_value: HoprBalance,
     /// Total value of on-chain rejected tickets in this channel.
     pub rejected_value: HoprBalance,
+    /// Total value of on-chain redeemed tickets in this channel.
+    #[deprecated(since = "1.4.0", note = "read on-chain value instead once blokli#237 is merged")]
+    pub redeemed_value: HoprBalance,
     /// Total value of on-chain neglected tickets in this channel.
     pub neglected_value: HoprBalance,
 }
