@@ -1,27 +1,31 @@
-#################################################################################
-# Pipeline to check opened PR labels and title.
-#################################################################################
-name: Open PR
+---
+name: PR
+
 on:
+  merge_group:
+    types: [checks_requested]
   pull_request:
     types:
       - opened
+      - synchronize
       - reopened
       - ready_for_review
-      - review_requested
+
 permissions:
   contents: read
+
 concurrency:
-  group: ${{ github.event.pull_request.number }}-open-pr
-  cancel-in-progress: false
+  group: ${{ github.event.pull_request.head.ref || github.ref_name }}-pr
+  cancel-in-progress: true
+
 jobs:
   validate-pr-title:
-    name: PR / Validate title
+    name: Validate title
     runs-on: self-hosted-hoprnet-small
     permissions:
       pull-requests: read
     steps:
-      - uses: amannn/action-semantic-pull-request@v6
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -43,8 +47,9 @@ jobs:
           ignoreLabels: |
             bot
             ignore-semantic-pull-request
+
   label:
-    name: PR / Add labels
+    name: Add labels
     runs-on: self-hosted-hoprnet-small
     permissions:
       contents: read
@@ -56,13 +61,16 @@ jobs:
         with:
           disable-sudo: true
           egress-policy: audit
+
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+
       - uses: actions/labeler@77a4082b841706ac431479b7e2bb11216ffef250 # main on 20.02.2025
         with:
           sync-labels: true
+
       - name: Add "external" label for forked PRs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,8 +79,27 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [[ "$HEAD_REPO" != "$BASE_REPO" ]]; then
-            echo "Adding 'external' label to the PR..."
             gh pr edit "$PR_NUMBER" --add-label "external"
-          else
-            echo "PR is not from a fork. No label added."
           fi
+
+  checks:
+    name: Check
+    uses: hoprnet/hopr-workflows/.github/workflows/checks.yaml@53b3fdc9b49573bce5e53421c6cd3f261141f89c # checks-v1
+    with:
+      source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      runner_small: self-hosted-hoprnet-small
+      runner_large: self-hosted-hoprnet-bigger
+    secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  tests:
+    name: Test
+    uses: hoprnet/hopr-workflows/.github/workflows/tests.yaml@53b3fdc9b49573bce5e53421c6cd3f261141f89c # tests-v1
+    with:
+      source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      unit_tests: true
+      unit_test_command: "nix build -L .#unit-test"
+      runner: self-hosted-hoprnet-bigger
+      test_timeout: 30
+    secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
