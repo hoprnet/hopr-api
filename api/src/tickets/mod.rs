@@ -180,6 +180,7 @@ impl<T: TicketManagement + ?Sized> TicketManagementExt for T {}
 ///
 /// NOTE: the implementors must be able to perform these operations as effectively as possible, due
 /// to the high frequency of these operations in the packet processing pipeline.
+#[auto_impl::auto_impl(&, Box, Arc)]
 pub trait TicketFactory {
     type Error: std::error::Error + Send + Sync + 'static;
 
