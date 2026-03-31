@@ -1,10 +1,14 @@
 use std::num::NonZeroU8;
+
 use futures::{Stream, StreamExt};
 pub use hopr_types::{
-    internal::prelude::{ChannelId, VerifiedTicket, TicketBuilder},
+    internal::prelude::{ChannelId, TicketBuilder, VerifiedTicket},
     primitive::balance::HoprBalance,
 };
-use crate::chain::{ChainReadChannelOperations, ChainWriteTicketOperations, ChannelEntry, ChannelSelector, WinningProbability};
+
+use crate::chain::{
+    ChainReadChannelOperations, ChainWriteTicketOperations, ChannelEntry, ChannelSelector, WinningProbability,
+};
 
 /// Contains ticket statistics for an incoming channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -166,18 +170,19 @@ impl<T: TicketManagement + ?Sized> TicketManagementExt for T {}
 
 /// Provides API for creating tickets and validating channel stakes inside the packet pipelines.
 ///
-/// Every type of node (Entry, Relay, Exit) needs to call [`TicketFactory::new_multihop_ticket`] 
-/// whenever it sends a packet with more than one relay on (the remaining portion of) its path. 
-/// 
+/// Every type of node (Entry, Relay, Exit) needs to call [`TicketFactory::new_multihop_ticket`]
+/// whenever it sends a packet with more than one relay on (the remaining portion of) its path.
+///
 /// The incoming packet pipeline on Relay nodes needs to perform sender ticket validation
-/// when forwarding a packet. For this operation it typically needs to call [`TicketFactory::remaining_incoming_channel_stake`]
-/// to see if the sender still has enough funds to pay for the ticket.
-/// 
+/// when forwarding a packet. For this operation it typically needs to call
+/// [`TicketFactory::remaining_incoming_channel_stake`] to see if the sender still has enough funds to pay for the
+/// ticket.
+///
 /// NOTE: the implementors must be able to perform these operations as effectively as possible, due
 /// to the high frequency of these operations in the packet processing pipeline.
 pub trait TicketFactory {
     type Error: std::error::Error + Send + Sync + 'static;
-    
+
     /// Creates the multihop ticket builder for the given channel and path position.
     ///
     /// The returned builder should have all fields filled in except the `challenge` and `signature` fields.
@@ -188,11 +193,18 @@ pub trait TicketFactory {
     /// In such a case, the implementations must return an error.
     ///
     /// Since this operation is called per each outgoing packet for every node type, the operation must be fast.
-    fn new_multihop_ticket(&self, channel: &ChannelEntry, path_position: NonZeroU8, winning_probability: WinningProbability, price_per_hop: HoprBalance) -> Result<TicketBuilder, Self::Error>;
+    fn new_multihop_ticket(
+        &self,
+        channel: &ChannelEntry,
+        path_position: NonZeroU8,
+        winning_probability: WinningProbability,
+        price_per_hop: HoprBalance,
+    ) -> Result<TicketBuilder, Self::Error>;
 
     /// Returns real remaining value on the given incoming channel.
     ///
-    /// This is equal to the balance of the given `channel` minus the sum of all unredeemed tickets currently in that channel.
+    /// This is equal to the balance of the given `channel` minus the sum of all unredeemed tickets currently in that
+    /// channel.
     ///
     /// The value does not make sense for other than incoming channels, in which case the implementation
     /// can either simply return the balance of the given channel or an error.
@@ -209,7 +221,6 @@ pub trait TicketFactory {
         Ok(channel.balance)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
