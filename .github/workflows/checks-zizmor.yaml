@@ -1,37 +1,34 @@
+---
 name: Zizmor
+
 on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - ".github/**"
   merge_group:
     types: [checks_requested]
-  workflow_call:
-    inputs:
-      source_repo:
-        required: true
-        type: string
-      source_branch:
-        required: true
-        type: string
+
 concurrency:
-  group: ${{ inputs.source_branch || github.ref_name }}-zizmor
+  group: ${{ github.event.pull_request.head.ref || github.ref_name }}-zizmor
   cancel-in-progress: true
-permissions: {}
+
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   zizmor:
-    name: Zizmor
-    runs-on: self-hosted-hoprnet-bigger
+    uses: hoprnet/hopr-workflows/.github/workflows/checks-zizmor.yaml@bbd22e57cf954c15f0a6051d59329857809141dd # workflow-checks-zizmor-v1
     permissions:
       contents: read
       security-events: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - name: Run zizmor
-        uses: hoprnet/hopr-workflows/actions/nix-action@c2aca7e56d25c4a786049ccf816c7f1af8721de8 # nix-action-v1
-        with:
-          source_branch: ${{ inputs.source_branch }}
-          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          command: nix develop -L .#ci -c bash -c "zizmor --format sarif . > results.sarif"
-      - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@45cbd0c69e560cd9e7cd7f8c32362050c9b7ded2 # v4.32.2
-        with:
-          sarif_file: results.sarif
-          category: zizmor
+    with:
+      source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      runner: self-hosted-hoprnet-bigger
+    secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
