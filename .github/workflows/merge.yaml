@@ -31,7 +31,7 @@ jobs:
     name: Publish
     needs: [build-library]
     if: github.event.pull_request.merged == true
-    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@f3f77b8291dc10662e8d2ae291b6298a170dad88 # publish-crates-v1
+    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@a8b0ab83aab7876fecccdb4a8f126cb4856a2f0b # publish-crates-v1
     permissions:
       contents: read
     with:
