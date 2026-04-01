@@ -136,3 +136,18 @@ jobs:
       enabled: ${{ matrix.required_label == '' || contains(github.event.pull_request.labels.*.name, matrix.required_label) }}
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+  publish-dry-run:
+    name: Publish
+    needs: [tests]
+    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@kauki/feat/ci/publish-crates-workflow
+    permissions:
+      contents: read
+    with:
+      source_branch: ${{ github.event.pull_request.head.ref || github.ref }}
+      package: hopr-api
+      dry_run: true
+      runner: self-hosted-hoprnet-bigger
+    secrets:
+      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      cargo_registry_token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
