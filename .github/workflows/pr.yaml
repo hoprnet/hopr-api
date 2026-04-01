@@ -140,7 +140,7 @@ jobs:
   publish-dry-run:
     name: Publish
     needs: [tests]
-    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@kauki/feat/ci/publish-crates-workflow
+    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@f3f77b8291dc10662e8d2ae291b6298a170dad88 # publish-crates-v1
     permissions:
       contents: read
     with:
