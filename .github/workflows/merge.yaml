@@ -27,24 +27,9 @@ jobs:
       runner: ${{ matrix.runner }}
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-  publish:
-    name: Publish
-    needs: [build-library]
-    if: github.event.pull_request.merged == true
-    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@a8b0ab83aab7876fecccdb4a8f126cb4856a2f0b # publish-crates-v1
-    permissions:
-      contents: read
-    with:
-      source_branch: ${{ github.event.pull_request.base.ref }}
-      package: hopr-api
-      dry_run: false
-      runner: self-hosted-hoprnet-bigger
-    secrets:
-      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      cargo_registry_token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
   notify:
     name: Notify failure
-    needs: [build-library, publish]
+    needs: [build-library]
     if: ${{ always() && github.event.pull_request.merged == true && !success() }}
     runs-on: ubuntu-latest
     permissions: {}
