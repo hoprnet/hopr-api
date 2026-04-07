@@ -1,8 +1,4 @@
 use futures::future::BoxFuture;
-pub use hopr_types::internal::prelude::{RedeemableTicket, VerifiedTicket};
-
-use crate::chain::ChainReceipt;
-use futures::future::BoxFuture;
 pub use hopr_types::{
     internal::prelude::{RedeemableTicket, VerifiedTicket},
     primitive::prelude::HoprBalance,
