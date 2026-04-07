@@ -13,7 +13,7 @@ pub mod network;
 /// High-level HOPR node API traits.
 #[cfg(feature = "node")]
 pub mod node;
-/// Winning ticket management API traits..
+/// Winning ticket management API traits.
 #[cfg(feature = "tickets")]
 pub mod tickets;
 

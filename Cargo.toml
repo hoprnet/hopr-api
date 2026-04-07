@@ -4,8 +4,11 @@ resolver = "2"
 
 members = ["api"]
 
+[workspace.metadata.crane]
+name = "hopr-api"
+
 [workspace.package]
-version = "1.2.0"
+version = "1.4.1"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
 repository = "https://github.com/hoprnet/hopr-api"
@@ -25,12 +28,15 @@ futures = { version = "0.3.32", default-features = false, features = [
   "std",
   "async-await",
 ] }
+futures-concurrency = "7.7.1"
 libp2p-identity = { version = "0.2.13", features = [
   "peerid",
   "ed25519",
   "rand",
 ] }
 multiaddr = "0.18.2"
+mockall = "0.14.0"
+rand = { version = "0.10.0" }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
 tracing = { version = "0.1.44", default-features = false, features = [

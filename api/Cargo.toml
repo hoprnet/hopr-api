@@ -34,7 +34,7 @@ network = []
 graph = ["dep:auto_impl"]
 node = ["chain", "db", "graph", "network", "dep:atomic_enum"]
 serde = ["hopr-types/serde", "dep:serde"]
-tickets = ["dep:auto_impl"]
+tickets = ["chain", "dep:auto_impl"]
 types-random = ["hopr-types/random"]
 types-fixed-rng = ["hopr-types/fixed-rng"]
 types-chain = ["hopr-types/chain"]
@@ -46,6 +46,7 @@ auto_impl = { workspace = true, optional = true }
 atomic_enum = { workspace = true, optional = true }
 chrono = { workspace = true }
 futures = { workspace = true }
+futures-concurrency = { workspace = true }
 libp2p-identity = { workspace = true }
 multiaddr = { workspace = true }
 serde = { workspace = true, optional = true }
@@ -62,3 +63,6 @@ hopr-types = { workspace = true, features = [
 [dev-dependencies]
 anyhow = { workspace = true }
 insta = { workspace = true }
+mockall = { workspace = true }
+serde = { workspace = true }
+tokio = { version = "1.43", features = ["macros", "rt-multi-thread"] }
