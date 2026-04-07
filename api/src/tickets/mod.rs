@@ -11,7 +11,7 @@ use crate::chain::{
 };
 
 /// Contains ticket statistics for an incoming channel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChannelStats {
     /// Total number of winning tickets received in this channel.
@@ -145,8 +145,7 @@ pub trait TicketManagementExt: TicketManagement {
                     .unwrap_or_default()
                     .with_destination(*client.me())
                     .with_redeemable_channels(min_grace_period),
-            )
-            .await?
+            )?
             .filter_map(|channel| {
                 futures::future::ready(
                     self.redeem_stream(client.clone(), *channel.get_id(), min_amount)
@@ -259,12 +258,11 @@ mod tests {
 
     mock! {
         pub ChainClient {}
-        #[async_trait::async_trait]
         impl ChainReadChannelOperations for ChainClient {
             type Error = std::io::Error;
             fn me(&self) -> &Address;
-            async fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, std::io::Error>;
-            async fn stream_channels<'a>(
+            fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, std::io::Error>;
+            fn stream_channels<'a>(
                 &'a self,
                 selector: ChannelSelector,
             ) -> Result<stream::BoxStream<'a, ChannelEntry>, std::io::Error>;
