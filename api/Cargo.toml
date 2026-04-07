@@ -1,10 +1,10 @@
 [package]
 name = "hopr-api"
-description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
-homepage = "https://hoprnet.org/"
-repository = "https://github.com/hoprnet/hopr-api"
-license = "GPL-3.0-only"
 
+description.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
