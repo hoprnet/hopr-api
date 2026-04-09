@@ -67,7 +67,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "1.5.0", features = [
+hopr-types = { version = "1.5.1", features = [
   "crypto",
   "internal",
   "primitive",
