@@ -30,7 +30,7 @@ jobs:
   notify:
     name: Notify failure
     needs: [build-library]
-    if: ${{ failure() }}
+    if: ${{ always() && github.event.pull_request.merged == true && !success() }}
     runs-on: ubuntu-latest
     permissions: {}
     steps:
