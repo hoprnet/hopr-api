@@ -1008,7 +1008,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.5.1"
+version = "1.5.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1031,9 +1031,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfe07d79b33639dc62815fd60d9e2558846c91abd83a61306d0c533065d019db"
+checksum = "6084743d50e8aee75a629289f853c7cca1bd1db49e3942c292f11f7e6e7d9d0f"
 dependencies = [
  "aes",
  "anyhow",
