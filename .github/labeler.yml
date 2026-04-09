@@ -16,4 +16,4 @@ documentation:
           - "**/*.md"
 crate:hopr-api:
   - changed-files:
-      - any-glob-to-any-file: api/**
+      - any-glob-to-any-file: src/**
