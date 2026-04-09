@@ -38,7 +38,7 @@ jobs:
   publish:
     name: Publish
     needs: [build-library]
-    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@c3fc27abcfa0a4fabb226a3d8f0d5b84307a6c8d # workflow-publish-crates-v1
+    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@acf901517a3207bb72874997ac060b38c32b21ba # workflow-publish-crates-v1
     permissions:
       contents: read
     with:
