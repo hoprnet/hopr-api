@@ -1,7 +1,47 @@
 use futures::future::BoxFuture;
-pub use hopr_types::internal::prelude::{RedeemableTicket, VerifiedTicket};
+pub use hopr_types::{
+    internal::prelude::{RedeemableTicket, VerifiedTicket},
+    primitive::prelude::HoprBalance,
+};
 
-use crate::chain::ChainReceipt;
+use crate::chain::{ChainReceipt, WinningProbability};
+
+/// On-chain operations to read values related to tickets.
+///
+/// These operations are used in critical packet processing pipelines, and therefore,
+/// should not query the chain information directly, and they MUST NOT block.
+#[auto_impl::auto_impl(&, Box, Arc)]
+pub trait ChainReadTicketOperations {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Retrieves the expected minimum winning probability and ticket price for **incoming** tickets.
+    ///
+    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
+    fn incoming_ticket_values(&self) -> Result<(WinningProbability, HoprBalance), Self::Error>;
+
+    /// Retrieves the winning probability and ticket price for **outgoing** tickets,
+    /// with respect to the optionally pre-configured values.
+    ///
+    /// The caller, not the implementation, should make sure that the configured values (if provided)
+    /// are not less than the expected values for incoming tickets.
+    ///
+    /// This operation MUST not block, as it is typically used within the critical packet processing pipeline.
+    ///
+    /// The default implementation calls the `incoming_ticket_values` method and uses the incoming values
+    /// unless the configured values are provided.
+    fn outgoing_ticket_values(
+        &self,
+        configured_wp: Option<WinningProbability>,
+        configured_price: Option<HoprBalance>,
+    ) -> Result<(WinningProbability, HoprBalance), Self::Error> {
+        match (configured_wp, configured_price) {
+            (Some(wp), Some(price)) => Ok((wp, price)),
+            (None, Some(price)) => Ok((self.incoming_ticket_values()?.0, price)),
+            (Some(wp), None) => Ok((wp, self.incoming_ticket_values()?.1)),
+            _ => self.incoming_ticket_values(),
+        }
+    }
+}
 
 /// Errors that can occur during ticket redemption.
 #[derive(Debug, thiserror::Error)]

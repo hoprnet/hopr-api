@@ -8,7 +8,8 @@ members = ["api"]
 name = "hopr-api"
 
 [workspace.package]
-version = "1.4.1"
+version = "1.5.0"
+description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
 repository = "https://github.com/hoprnet/hopr-api"

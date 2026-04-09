@@ -1,13 +1,17 @@
+use std::num::NonZeroU8;
+
 use futures::{Stream, StreamExt};
 pub use hopr_types::{
-    internal::prelude::{ChannelId, VerifiedTicket},
+    internal::prelude::{ChannelId, TicketBuilder, VerifiedTicket},
     primitive::balance::HoprBalance,
 };
 
-use crate::chain::{ChainReadChannelOperations, ChainWriteTicketOperations, ChannelSelector};
+use crate::chain::{
+    ChainReadChannelOperations, ChainWriteTicketOperations, ChannelEntry, ChannelSelector, WinningProbability,
+};
 
 /// Contains ticket statistics for an incoming channel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChannelStats {
     /// Total number of winning tickets received in this channel.
@@ -141,8 +145,7 @@ pub trait TicketManagementExt: TicketManagement {
                     .unwrap_or_default()
                     .with_destination(*client.me())
                     .with_redeemable_channels(min_grace_period),
-            )
-            .await?
+            )?
             .filter_map(|channel| {
                 futures::future::ready(
                     self.redeem_stream(client.clone(), *channel.get_id(), min_amount)
@@ -163,6 +166,61 @@ pub trait TicketManagementExt: TicketManagement {
 }
 
 impl<T: TicketManagement + ?Sized> TicketManagementExt for T {}
+
+/// Provides API for creating tickets and validating channel stakes inside the packet pipelines.
+///
+/// Every type of node (Entry, Relay, Exit) needs to call [`TicketFactory::new_multihop_ticket`]
+/// whenever it sends a packet with more than one relay on (the remaining portion of) its path.
+///
+/// The incoming packet pipeline on Relay nodes needs to perform sender ticket validation
+/// when forwarding a packet. For this operation it typically needs to call
+/// [`TicketFactory::remaining_incoming_channel_stake`] to see if the sender still has enough funds to pay for the
+/// ticket.
+///
+/// NOTE: the implementors must be able to perform these operations as effectively as possible, due
+/// to the high frequency of these operations in the packet processing pipeline.
+#[auto_impl::auto_impl(&, Box, Arc)]
+pub trait TicketFactory {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Creates the multihop ticket builder for the given channel and path position.
+    ///
+    /// The returned builder should have all fields filled in except the `challenge` and `signature` fields.
+    ///
+    /// The `path_position` argument is descending from a certain maximum number of hops until 1.
+    /// However, the HOPR protocol does not require the existence of a channel for a 0-hop ticket, therefore,
+    /// this method does not make sense for `path_position` equal to 1 (indicating the last hop).
+    /// In such a case, the implementations must return an error.
+    ///
+    /// Since this operation is called per each outgoing packet for every node type, the operation must be fast.
+    fn new_multihop_ticket(
+        &self,
+        channel: &ChannelEntry,
+        path_position: NonZeroU8,
+        winning_probability: WinningProbability,
+        price_per_hop: HoprBalance,
+    ) -> Result<TicketBuilder, Self::Error>;
+
+    /// Returns real remaining value on the given incoming channel.
+    ///
+    /// This is equal to the balance of the given `channel` minus the sum of all unredeemed tickets currently in that
+    /// channel.
+    ///
+    /// The value does not make sense for other than incoming channels, in which case the implementation
+    /// can either simply return the balance of the given channel or an error.
+    ///
+    /// This method is only interesting for relay nodes. When a relay node is about to relay a
+    /// packet, it must check whether the sender still has enough funds to pay for the ticket.
+    ///
+    /// Since this operation is called per each relayed packet, the operation must be fast.
+    ///
+    /// The non-relay nodes are free to return the balance of the given channel or an error.
+    ///
+    /// The default implementation simply returns the balance of the given channel.
+    fn remaining_incoming_channel_stake(&self, channel: &ChannelEntry) -> Result<HoprBalance, Self::Error> {
+        Ok(channel.balance)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -200,12 +258,11 @@ mod tests {
 
     mock! {
         pub ChainClient {}
-        #[async_trait::async_trait]
         impl ChainReadChannelOperations for ChainClient {
             type Error = std::io::Error;
             fn me(&self) -> &Address;
-            async fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, std::io::Error>;
-            async fn stream_channels<'a>(
+            fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, std::io::Error>;
+            fn stream_channels<'a>(
                 &'a self,
                 selector: ChannelSelector,
             ) -> Result<stream::BoxStream<'a, ChannelEntry>, std::io::Error>;
