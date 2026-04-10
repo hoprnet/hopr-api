@@ -67,5 +67,5 @@ pub trait ChainValues {
     /// Gets the information about the HOPR network on-chain deployment.
     async fn chain_info(&self) -> Result<ChainInfo, Self::Error>;
     /// Gets the ticket redemption stats for the given safe address.
-    async fn redemption_stats<A: Into<Address>>(&self, safe_addr: A) -> Result<RedemptionStats, Self::Error>;
+    async fn redemption_stats<A: Into<Address> + Send>(&self, safe_addr: A) -> Result<RedemptionStats, Self::Error>;
 }
