@@ -8,6 +8,7 @@ use crate::chain::ChainReceipt;
 
 /// Information about a deployed Safe.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DeployedSafe {
     /// Safe address.
     pub address: Address,

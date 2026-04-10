@@ -23,6 +23,7 @@ pub type DateTime = chrono::DateTime<chrono::Utc>;
 ///
 /// See [`ChainReadChannelOperations::stream_channels`].
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChannelSelector {
     /// Filter by source address.
     pub source: Option<Address>,
