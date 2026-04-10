@@ -13,6 +13,7 @@ use hopr_types::{
 
 /// Contains domain separator information.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DomainSeparators {
     /// HOPR Ledger smart contract domain separator.
     pub ledger: Hash,
@@ -24,6 +25,7 @@ pub struct DomainSeparators {
 
 /// Contains information about the HOPR on-chain network deployment.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChainInfo {
     /// ID of the blockchain network (e.g.: `0x64` for Gnosis Chain)
     pub chain_id: u64,
@@ -31,6 +33,16 @@ pub struct ChainInfo {
     pub hopr_network_name: String,
     /// Addresses of the deployed HOPR smart contracts.
     pub contract_addresses: ContractAddresses,
+}
+
+/// Ticket redemption statistics for a Safe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct RedemptionStats {
+    /// Total number of tickets that have been redeemed.
+    pub redeemed_count: u64,
+    /// Total value of tickets that have been redeemed.
+    pub redeemed_value: HoprBalance,
 }
 
 /// Retrieves various on-chain information.
@@ -54,4 +66,6 @@ pub trait ChainValues {
     async fn channel_closure_notice_period(&self) -> Result<Duration, Self::Error>;
     /// Gets the information about the HOPR network on-chain deployment.
     async fn chain_info(&self) -> Result<ChainInfo, Self::Error>;
+    /// Gets the ticket redemption stats for the given safe address.
+    async fn redemption_stats<A: Into<Address>>(&self, safe_addr: A) -> Result<RedemptionStats, Self::Error>;
 }

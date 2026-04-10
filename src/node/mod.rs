@@ -1,7 +1,7 @@
 //! High-level HOPR node API trait definitions.
 //!
 //! This module defines the external API interface for interacting with a running HOPR node.
-//! The [`HoprNodeNetworkOperations`] and [`HoprNodeOperations`] traits provide the
+//! The `HoprNodeNetworkOperations` and `HoprNodeOperations` traits provide the
 //! operations available to external consumers, abstracting over implementation details.
 
 pub mod state;

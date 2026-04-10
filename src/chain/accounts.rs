@@ -62,7 +62,7 @@ pub trait ChainWriteAccountOperations {
         key: &OffchainKeypair,
     ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, AnnouncementError<Self::Error>>;
 
-    /// Withdraws native or token currency from the Safe or node account (depends on the used [`PayloadGenerator`]).
+    /// Withdraws native or token currency from the Safe or node account (depends on the used `PayloadGenerator`).
     async fn withdraw<C: Currency + Send>(
         &self,
         balance: Balance<C>,

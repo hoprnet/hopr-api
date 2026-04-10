@@ -11,6 +11,10 @@ use crate::chain::{
 };
 
 /// Contains ticket statistics for an incoming channel.
+///
+/// The redeemed value should be retrieved directly from
+/// the chain instead (see [`ChainValues::redemption_stats`](crate::chain::ChainValues::redemption_stats) for more
+/// details).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ChannelStats {
@@ -20,9 +24,6 @@ pub struct ChannelStats {
     pub unredeemed_value: HoprBalance,
     /// Total value of on-chain rejected tickets in this channel.
     pub rejected_value: HoprBalance,
-    /// Total value of on-chain redeemed tickets in this channel.
-    #[deprecated(since = "1.4.0", note = "read on-chain value instead once blokli#237 is merged")]
-    pub redeemed_value: HoprBalance,
     /// Total value of on-chain neglected tickets in this channel.
     pub neglected_value: HoprBalance,
 }

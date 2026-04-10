@@ -75,7 +75,7 @@ where
     type ChainError = E;
 }
 
-/// [`PathAddressResolver`] which uses the [HOPR chain API](self) to resolve addresses and channels.
+/// The `PathAddressResolver` which uses the [HOPR chain API](self) to resolve addresses and channels.
 ///
 /// This type implements a `From` trait for all types that implement both
 /// [`ChainKeyOperations`] and [`ChainReadChannelOperations`].
