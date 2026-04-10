@@ -39,6 +39,7 @@ types-random = ["hopr-types/random"]
 types-fixed-rng = ["hopr-types/fixed-rng"]
 types-chain = ["hopr-types/chain"]
 types-internal = ["hopr-types/internal"]
+types-with-bindings = ["types-chain", "hopr-types/use-bindings"]
 
 [dependencies]
 async-trait = "0.1.89"
