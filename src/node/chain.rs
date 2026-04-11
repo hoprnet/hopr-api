@@ -58,7 +58,7 @@ pub trait HoprNodeChainOperations {
     /// Implementation of the [`HoprChainApi`] trait for the underlying chain.
     type ChainApi: HoprChainApi + Clone + Send + Sync + 'static;
 
-    /// Timeout multiplier to [HoprChainApi::typical_resolution_time] used to wait for on-chain operations
+    /// Timeout multiplier to [`ChainValues::typical_resolution_time`] used to wait for on-chain operations
     /// to be observed on the event bus.
     ///
     /// Every operation that uses [`wait_for_on_chain_event`](Self::wait_for_on_chain_event) will use this multiplier.
@@ -70,7 +70,7 @@ pub trait HoprNodeChainOperations {
     /// Returns reference to the underlying chain API.
     fn chain_api(&self) -> &Self::ChainApi;
 
-    /// Spawns an asynchronous waiter that hooks up to the [`ChainEvent`] [bus](HoprChainApi::subscribe) and either
+    /// Spawns an asynchronous waiter that hooks up to the [`ChainEvent`] [bus](crate::chain::ChainEvents::subscribe) and either
     /// matching the given `predicate` or timing out after `timeout`.
     ///
     /// The implementor decides on the async runtime used to spawn the operation that resolves
