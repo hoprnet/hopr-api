@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "1.6.2"
+version = "1.7.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -17,7 +17,6 @@ default = []
 full = [
   "chain",
   "ct",
-  "db",
   "network",
   "graph",
   "node",
@@ -27,12 +26,18 @@ full = [
   "types-random",
   "types-fixed-rng",
 ]
-chain = ["db", "types-chain", "dep:auto_impl"]
+chain = ["dep:auto_impl", "types-chain", "dep:auto_impl"]
 ct = []
-db = ["dep:auto_impl"]
 network = []
 graph = ["dep:auto_impl"]
-node = ["chain", "db", "graph", "network", "tickets", "dep:atomic_enum"]
+node = [
+  "chain",
+  "graph",
+  "network",
+  "tickets",
+  "dep:atomic_enum",
+  "dep:auto_impl",
+]
 serde = ["hopr-types/serde", "dep:serde"]
 tickets = ["chain", "dep:auto_impl"]
 types-random = ["hopr-types/random"]

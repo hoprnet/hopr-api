@@ -1,44 +1,21 @@
 //! High-level HOPR node API trait definitions.
 //!
 //! This module defines the external API interface for interacting with a running HOPR node.
-//! The `HoprNodeNetworkOperations` and `HoprNodeOperations` traits provide the
-//! operations available to external consumers, abstracting over implementation details.
 
-pub mod state;
-pub mod incentives;
-pub mod network;
+mod chain;
+mod network;
+mod state;
+mod tickets;
 
-use hopr_types::{crypto::prelude::Hash, primitive::prelude::Address};
+pub use chain::*;
 pub use multiaddr::PeerId;
+pub use network::*;
+pub use state::*;
+pub use tickets::*;
 
-pub use crate::chain::ChainInfo;
-use crate::{chain::ChannelId, graph::traits::EdgeObservable, network::Health};
-
-/// Result of opening a channel on-chain.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpenChannelResult {
-    /// Transaction hash of the channel open operation.
-    pub tx_hash: Hash,
-    /// The ID of the opened channel.
-    pub channel_id: ChannelId,
-}
-
-/// Result of closing a channel on-chain.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CloseChannelResult {
-    /// Transaction hash of the channel close operation.
-    pub tx_hash: Hash,
-}
-
-/// Configuration for the Safe module.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SafeModuleConfig {
-    /// Address of the Safe contract.
-    pub safe_address: Address,
-    /// Address of the module contract.
-    pub module_address: Address,
-}
+pub use crate::chain::{ChainInfo, ChannelId};
 
 pub trait HoprNodeOperations {
+    /// Returns the [runtime status](state::HoprState) of the node.
     fn status(&self) -> state::HoprState;
 }
