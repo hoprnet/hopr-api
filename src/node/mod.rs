@@ -15,6 +15,7 @@ pub use tickets::*;
 
 pub use crate::chain::{ChainInfo, ChannelId};
 
+/// General operations performed by a HOPR node.
 pub trait HoprNodeOperations {
     /// Returns the [runtime status](state::HoprState) of the node.
     fn status(&self) -> state::HoprState;
