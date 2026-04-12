@@ -38,7 +38,7 @@ pub trait HoprNodeNetworkOperations {
     fn network_peer_info(&self, peer: &PeerId) -> Option<Self::TransportObservable>;
 
     /// Returns all network peers with quality above the minimum score.
-    fn all_network_peers(
+    async fn all_network_peers(
         &self,
         minimum_score: f64,
     ) -> Result<Vec<(Option<Address>, PeerId, Self::TransportObservable)>, Self::NodeNetworkError>;
