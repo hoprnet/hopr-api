@@ -44,12 +44,15 @@ pub struct CloseChannelResult {
 
 /// Future that resolves when a [`ChainEvent`] is resolved, times out, or is aborted
 /// via the associated abort handle.
-pub type ChainEventResolver<E> = (BoxFuture<'static, Result<ChainEvent, E>>, AbortHandle);
+pub type ChainEventResolver<E1, E2> = (BoxFuture<'static, CompoundResult<ChainEvent, E1, E2>>, AbortHandle);
 
 /// Implemented by nodes that support interaction with an [underlying chain](HoprChainApi).
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait HoprNodeChainOperations {
+    /// General error thrown by the implementors.
+    type NodeChainError: std::error::Error + Send + Sync + 'static;
+
     /// Implementation of the [`HoprChainApi`] trait for the underlying chain.
     type ChainApi: HoprChainApi + Clone + Send + Sync + 'static;
 
@@ -81,7 +84,7 @@ pub trait HoprNodeChainOperations {
         context: String,
         timeout: std::time::Duration,
     ) -> Result<
-        ChainEventResolver<<Self::ChainApi as HoprChainApi>::ChainError>,
+        ChainEventResolver<<Self::ChainApi as HoprChainApi>::ChainError, Self::NodeChainError>,
         <Self::ChainApi as HoprChainApi>::ChainError,
     >
     where
@@ -94,23 +97,37 @@ pub trait HoprNodeChainOperations {
         &self,
         destination: A,
         amount: HoprBalance,
-    ) -> Result<OpenChannelResult, <Self::ChainApi as HoprChainApi>::ChainError> {
+    ) -> CompoundResult<OpenChannelResult, <Self::ChainApi as HoprChainApi>::ChainError, Self::NodeChainError> {
         let destination = destination.into();
         let channel_id = generate_channel_id(&self.identity().node_address, &destination);
 
         // Subscribe to chain events BEFORE sending the transaction to avoid
         // a race where the event is broadcast before the subscriber activates.
-        let (event_awaiter, event_abort) = self.wait_for_on_chain_event(
-            move |event| matches!(event, ChainEvent::ChannelOpened(c) if c.get_id() == &channel_id),
-            format!("open channel to {destination} ({channel_id})"),
-            Self::CHAIN_OPERATION_TIMEOUT_MULTIPLIER * self.chain_api().typical_resolution_time().await?,
-        )?;
+        let (event_awaiter, event_abort) = self
+            .wait_for_on_chain_event(
+                move |event| matches!(event, ChainEvent::ChannelOpened(c) if c.get_id() == &channel_id),
+                format!("open channel to {destination} ({channel_id})"),
+                Self::CHAIN_OPERATION_TIMEOUT_MULTIPLIER
+                    * self
+                        .chain_api()
+                        .typical_resolution_time()
+                        .await
+                        .map_err(CompoundError::left)?,
+            )
+            .map_err(CompoundError::left)?;
 
-        let confirm_awaiter = self.chain_api().open_channel(&destination, amount).await?;
+        let confirm_awaiter = self
+            .chain_api()
+            .open_channel(&destination, amount)
+            .await
+            .map_err(CompoundError::left)?;
 
-        let tx_hash = confirm_awaiter.await.inspect_err(|_| {
-            event_abort.abort();
-        })?;
+        let tx_hash = confirm_awaiter
+            .await
+            .inspect_err(|_| {
+                event_abort.abort();
+            })
+            .map_err(CompoundError::left)?;
 
         let event = event_awaiter.await?;
         tracing::debug!(%event, "open channel event received");
@@ -125,7 +142,7 @@ pub trait HoprNodeChainOperations {
         &self,
         channel_id: &ChannelId,
         amount: HoprBalance,
-    ) -> Result<Hash, <Self::ChainApi as HoprChainApi>::ChainError> {
+    ) -> CompoundResult<Hash, <Self::ChainApi as HoprChainApi>::ChainError, Self::NodeChainError> {
         let channel_id = *channel_id;
 
         // Subscribe to chain events BEFORE sending the transaction to avoid
@@ -134,14 +151,21 @@ pub trait HoprNodeChainOperations {
             move |event| matches!(event, ChainEvent::ChannelBalanceIncreased(c, a) if c.get_id() == &channel_id && a == &amount),
             format!("fund channel {channel_id}"),
             Self::CHAIN_OPERATION_TIMEOUT_MULTIPLIER *
-                self.chain_api().typical_resolution_time().await?
-        )?;
+                self.chain_api().typical_resolution_time().await.map_err(CompoundError::left)?
+        ).map_err(CompoundError::left)?;
 
-        let confirm_awaiter = self.chain_api().fund_channel(&channel_id, amount).await?;
+        let confirm_awaiter = self
+            .chain_api()
+            .fund_channel(&channel_id, amount)
+            .await
+            .map_err(CompoundError::left)?;
 
-        let res = confirm_awaiter.await.inspect_err(|_| {
-            event_abort.abort();
-        })?;
+        let res = confirm_awaiter
+            .await
+            .inspect_err(|_| {
+                event_abort.abort();
+            })
+            .map_err(CompoundError::left)?;
 
         let event = event_awaiter.await?;
         tracing::debug!(%event, "fund channel event received");
@@ -155,25 +179,39 @@ pub trait HoprNodeChainOperations {
     async fn close_channel_by_id(
         &self,
         channel_id: &ChannelId,
-    ) -> Result<CloseChannelResult, <Self::ChainApi as HoprChainApi>::ChainError> {
+    ) -> CompoundResult<CloseChannelResult, <Self::ChainApi as HoprChainApi>::ChainError, Self::NodeChainError> {
         let channel_id = *channel_id;
 
         // Subscribe to chain events BEFORE sending the transaction to avoid
         // a race where the event is broadcast before the subscriber activates.
-        let (event_awaiter, event_abort) = self.wait_for_on_chain_event(
-            move |event| {
-                matches!(event, ChainEvent::ChannelClosed(c) if c.get_id() == &channel_id)
-                    || matches!(event, ChainEvent::ChannelClosureInitiated(c) if c.get_id() == &channel_id)
-            },
-            format!("close channel {channel_id}"),
-            Self::CHAIN_OPERATION_TIMEOUT_MULTIPLIER * self.chain_api().typical_resolution_time().await?,
-        )?;
+        let (event_awaiter, event_abort) = self
+            .wait_for_on_chain_event(
+                move |event| {
+                    matches!(event, ChainEvent::ChannelClosed(c) if c.get_id() == &channel_id)
+                        || matches!(event, ChainEvent::ChannelClosureInitiated(c) if c.get_id() == &channel_id)
+                },
+                format!("close channel {channel_id}"),
+                Self::CHAIN_OPERATION_TIMEOUT_MULTIPLIER
+                    * self
+                        .chain_api()
+                        .typical_resolution_time()
+                        .await
+                        .map_err(CompoundError::left)?,
+            )
+            .map_err(CompoundError::left)?;
 
-        let confirm_awaiter = self.chain_api().close_channel(&channel_id).await?;
+        let confirm_awaiter = self
+            .chain_api()
+            .close_channel(&channel_id)
+            .await
+            .map_err(CompoundError::left)?;
 
-        let tx_hash = confirm_awaiter.await.inspect_err(|_| {
-            event_abort.abort();
-        })?;
+        let tx_hash = confirm_awaiter
+            .await
+            .inspect_err(|_| {
+                event_abort.abort();
+            })
+            .map_err(CompoundError::left)?;
 
         let event = event_awaiter.await?;
         tracing::debug!(%event, "close channel event received");
