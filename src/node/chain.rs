@@ -70,8 +70,8 @@ pub trait HoprNodeChainOperations {
     /// Returns reference to the underlying chain API.
     fn chain_api(&self) -> &Self::ChainApi;
 
-    /// Spawns an asynchronous waiter that hooks up to the [`ChainEvent`] [bus](crate::chain::ChainEvents::subscribe) and either
-    /// matching the given `predicate` or timing out after `timeout`.
+    /// Spawns an asynchronous waiter that hooks up to the [`ChainEvent`] [bus](crate::chain::ChainEvents::subscribe)
+    /// and either matching the given `predicate` or timing out after `timeout`.
     ///
     /// The implementor decides on the async runtime used to spawn the operation that resolves
     /// with the returned future.
