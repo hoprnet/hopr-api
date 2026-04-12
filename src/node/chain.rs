@@ -11,7 +11,7 @@ use crate::{
         ChainReadSafeOperations, ChainValues, ChainWriteAccountOperations, ChainWriteChannelOperations,
         ChannelSelector, HoprChainApi,
     },
-    node::network::HoprNodeNetworkOperations,
+    node::{CompoundError, CompoundResult, network::HoprNodeNetworkOperations},
 };
 
 /// Identity of a node on-chain.
@@ -50,11 +50,6 @@ pub type ChainEventResolver<E> = (BoxFuture<'static, Result<ChainEvent, E>>, Abo
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait HoprNodeChainOperations {
-    /// Error returned by the node's on-chain operations.
-    ///
-    /// This error must be convertible from [`HoprChainApi::ChainError`].
-    type NodeChainError: std::error::Error + From<<Self::ChainApi as HoprChainApi>::ChainError> + Send + Sync + 'static;
-
     /// Implementation of the [`HoprChainApi`] trait for the underlying chain.
     type ChainApi: HoprChainApi + Clone + Send + Sync + 'static;
 
@@ -85,7 +80,10 @@ pub trait HoprNodeChainOperations {
         predicate: F,
         context: String,
         timeout: std::time::Duration,
-    ) -> Result<ChainEventResolver<Self::NodeChainError>, Self::NodeChainError>
+    ) -> Result<
+        ChainEventResolver<<Self::ChainApi as HoprChainApi>::ChainError>,
+        <Self::ChainApi as HoprChainApi>::ChainError,
+    >
     where
         F: Fn(&ChainEvent) -> bool + Send + Sync + 'static;
 
@@ -96,7 +94,7 @@ pub trait HoprNodeChainOperations {
         &self,
         destination: A,
         amount: HoprBalance,
-    ) -> Result<OpenChannelResult, Self::NodeChainError> {
+    ) -> Result<OpenChannelResult, <Self::ChainApi as HoprChainApi>::ChainError> {
         let destination = destination.into();
         let channel_id = generate_channel_id(&self.identity().node_address, &destination);
 
@@ -123,7 +121,11 @@ pub trait HoprNodeChainOperations {
     /// Funds an existing channel with the given `amount`.
     ///
     /// Returns an error if the channel does not exist or is not [opened](ChannelStatus).
-    async fn fund_channel(&self, channel_id: &ChannelId, amount: HoprBalance) -> Result<Hash, Self::NodeChainError> {
+    async fn fund_channel(
+        &self,
+        channel_id: &ChannelId,
+        amount: HoprBalance,
+    ) -> Result<Hash, <Self::ChainApi as HoprChainApi>::ChainError> {
         let channel_id = *channel_id;
 
         // Subscribe to chain events BEFORE sending the transaction to avoid
@@ -150,7 +152,10 @@ pub trait HoprNodeChainOperations {
     /// Initiates or finalizes the closure of a channel with the given `channel_id`.
     ///
     /// Returns an error if the channel does not exist, or its closure has been already finalized.
-    async fn close_channel_by_id(&self, channel_id: &ChannelId) -> Result<CloseChannelResult, Self::NodeChainError> {
+    async fn close_channel_by_id(
+        &self,
+        channel_id: &ChannelId,
+    ) -> Result<CloseChannelResult, <Self::ChainApi as HoprChainApi>::ChainError> {
         let channel_id = *channel_id;
 
         // Subscribe to chain events BEFORE sending the transaction to avoid
@@ -184,37 +189,43 @@ pub trait HoprNodeChainOperations {
         &self,
         recipient: &Address,
         amount: Balance<C>,
-    ) -> Result<Hash, Self::NodeChainError> {
+    ) -> Result<Hash, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().withdraw(amount, recipient).and_then(identity).await?)
     }
 
     /// Returns the balance of [`Currency`] in the node's account.
-    async fn get_balance<C: Currency + Send>(&self) -> Result<Balance<C>, Self::NodeChainError> {
+    async fn get_balance<C: Currency + Send>(
+        &self,
+    ) -> Result<Balance<C>, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().balance(self.identity().node_address).await?)
     }
 
     /// Returns the balance of [`Currency`] the node's Safe.
-    async fn get_safe_balance<C: Currency + Send>(&self) -> Result<Balance<C>, Self::NodeChainError> {
+    async fn get_safe_balance<C: Currency + Send>(
+        &self,
+    ) -> Result<Balance<C>, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().balance(self.identity().safe_address).await?)
     }
 
     /// Returns the allowance of the node's Safe to spend funds in channels.
-    async fn safe_allowance(&self) -> Result<HoprBalance, Self::NodeChainError> {
+    async fn safe_allowance(&self) -> Result<HoprBalance, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().safe_allowance(self.identity().safe_address).await?)
     }
 
     /// Shorthand to retrieve information about the connected blockchain.
-    async fn chain_info(&self) -> Result<ChainInfo, Self::NodeChainError> {
+    async fn chain_info(&self) -> Result<ChainInfo, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().chain_info().await?)
     }
 
     /// Shorthand to retrieve the minimum price of an incoming ticket given by the connected blockchain.
-    async fn get_ticket_price(&self) -> Result<HoprBalance, Self::NodeChainError> {
+    async fn get_ticket_price(&self) -> Result<HoprBalance, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().minimum_ticket_price().await?)
     }
 
     /// Shorthand to retrieve the minimum win probability of an incoming ticket given by the connected blockchain.
-    async fn get_minimum_incoming_ticket_win_probability(&self) -> Result<WinningProbability, Self::NodeChainError> {
+    async fn get_minimum_incoming_ticket_win_probability(
+        &self,
+    ) -> Result<WinningProbability, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().minimum_incoming_ticket_win_prob().await?)
     }
 
@@ -222,12 +233,14 @@ pub trait HoprNodeChainOperations {
     ///
     /// This is how much time is required for a channel to transition from
     /// `ChannelStatus::PendingToClose` to `ChannelStatus::Closed`.
-    async fn get_channel_closure_notice_period(&self) -> Result<std::time::Duration, Self::NodeChainError> {
+    async fn get_channel_closure_notice_period(
+        &self,
+    ) -> Result<std::time::Duration, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self.chain_api().channel_closure_notice_period().await?)
     }
 
     /// Returns all peers that have been publicly announced on-chain.
-    async fn announced_peers(&self) -> Result<Vec<AccountEntry>, Self::NodeChainError> {
+    async fn announced_peers(&self) -> Result<Vec<AccountEntry>, <Self::ChainApi as HoprChainApi>::ChainError> {
         Ok(self
             .chain_api()
             .stream_accounts(AccountSelector {
@@ -241,8 +254,11 @@ pub trait HoprNodeChainOperations {
     /// Returns a channel with the given `channel_id`.
     ///
     /// Depending on the underlying chain implementation [`closed`](ChannelStatus) channels may or may not be returned.
-    fn channel_by_id(&self, channel_id: &ChannelId) -> Result<Option<ChannelEntry>, Self::NodeChainError> {
-        Ok(self.chain_api().channel_by_id(channel_id)?)
+    fn channel_by_id(
+        &self,
+        channel_id: &ChannelId,
+    ) -> Result<Option<ChannelEntry>, <Self::ChainApi as HoprChainApi>::ChainError> {
+        self.chain_api().channel_by_id(channel_id)
     }
 
     /// Returns a channel with the given `source` and `destination`.
@@ -252,10 +268,8 @@ pub trait HoprNodeChainOperations {
         &self,
         source: A,
         destination: B,
-    ) -> Result<Option<ChannelEntry>, Self::NodeChainError> {
-        Ok(self
-            .chain_api()
-            .channel_by_parties(&source.into(), &destination.into())?)
+    ) -> Result<Option<ChannelEntry>, <Self::ChainApi as HoprChainApi>::ChainError> {
+        self.chain_api().channel_by_parties(&source.into(), &destination.into())
     }
 
     /// Returns all channels to the given `destination`.
@@ -264,7 +278,7 @@ pub trait HoprNodeChainOperations {
     async fn channels_to<A: Into<Address> + Send>(
         &self,
         destination: A,
-    ) -> Result<Vec<ChannelEntry>, Self::NodeChainError> {
+    ) -> Result<Vec<ChannelEntry>, <Self::ChainApi as HoprChainApi>::ChainError> {
         let dest = destination.into();
         Ok(self
             .chain_api()
@@ -283,7 +297,7 @@ pub trait HoprNodeChainOperations {
     async fn channels_from<A: Into<Address> + Send>(
         &self,
         source: A,
-    ) -> Result<Vec<ChannelEntry>, Self::NodeChainError> {
+    ) -> Result<Vec<ChannelEntry>, <Self::ChainApi as HoprChainApi>::ChainError> {
         let src = source.into();
         Ok(self
             .chain_api()
@@ -301,31 +315,35 @@ pub trait HoprNodeChainOperations {
 /// [network](HoprNodeNetworkOperations).
 ///
 /// This trait is automatically implemented for the nodes matching the criteria.
-pub trait HoprNodeChainNetworkOperationsExt: HoprNodeChainOperations + HoprNodeNetworkOperations
-where
-    <Self as HoprNodeChainOperations>::NodeChainError: From<<Self as HoprNodeNetworkOperations>::NodeNetworkError>
-        + From<<<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError>,
-{
+pub trait HoprNodeChainNetworkOperationsExt: HoprNodeChainOperations + HoprNodeNetworkOperations {
     /// Allows translation of a peer's transport identity to the corresponding on-chain address.
-    fn peerid_to_chain_key(&self, peer_id: &PeerId) -> Result<Option<Address>, Self::NodeChainError> {
-        Ok(self
-            .chain_api()
-            .packet_key_to_chain_key(&self.peer_id_to_offchain_key(peer_id)?)?)
+    fn peerid_to_chain_key(
+        &self,
+        peer_id: &PeerId,
+    ) -> CompoundResult<
+        Option<Address>,
+        <<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError,
+        <Self as HoprNodeNetworkOperations>::NodeNetworkError,
+    > {
+        self.chain_api()
+            .packet_key_to_chain_key(&self.peer_id_to_offchain_key(peer_id).map_err(CompoundError::right)?)
+            .map_err(CompoundError::left)
     }
     /// Allows translation of an on-chain address to the corresponding peer's transport identity.
-    fn chain_key_to_peerid<A: Into<Address> + Send>(&self, address: A) -> Result<Option<PeerId>, Self::NodeChainError> {
-        Ok(self
-            .chain_api()
+    fn chain_key_to_peerid<A: Into<Address> + Send>(
+        &self,
+        address: A,
+    ) -> CompoundResult<
+        Option<PeerId>,
+        <<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError,
+        <Self as HoprNodeNetworkOperations>::NodeNetworkError,
+    > {
+        self.chain_api()
             .chain_key_to_packet_key(&address.into())
-            .map(|pk| pk.map(|v| v.into()))?)
+            .map(|pk| pk.map(|v| v.into()))
+            .map_err(CompoundError::left)
     }
 }
 
 // Automatically implement the trait for all nodes that implement both traits.
-impl<T> HoprNodeChainNetworkOperationsExt for T
-where
-    T: ?Sized + HoprNodeChainOperations + HoprNodeNetworkOperations,
-    <Self as HoprNodeChainOperations>::NodeChainError: From<<Self as HoprNodeNetworkOperations>::NodeNetworkError>
-        + From<<<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError>,
-{
-}
+impl<T> HoprNodeChainNetworkOperationsExt for T where T: ?Sized + HoprNodeChainOperations + HoprNodeNetworkOperations {}

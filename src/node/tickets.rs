@@ -6,7 +6,7 @@ use hopr_types::{
 
 use crate::{
     chain::{ChannelSelector, HoprChainApi},
-    node::HoprNodeChainOperations,
+    node::{CompoundError, CompoundResult, HoprNodeChainOperations},
     tickets::{ChannelStats, RedemptionResult, TicketManagement, TicketManagementExt},
 };
 
@@ -27,17 +27,6 @@ pub enum TicketEvent {
 /// These are typically Relay nodes.
 #[async_trait::async_trait]
 pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
-    /// Error returned by the ticket operations.
-    ///
-    /// The error must be convertible from [`TicketManagement::Error`] as well as
-    /// from [`HoprChainApi::ChainError`].
-    type NodeTicketError: std::error::Error
-        + From<<Self::TicketManager as TicketManagement>::Error>
-        + From<<<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError>
-        + Send
-        + Sync
-        + 'static;
-
     /// Implementation of [`TicketManagement`]
     type TicketManager: TicketManagement + Clone + Send + Sync + 'static;
 
@@ -52,8 +41,16 @@ pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
 
     /// Returns [`ChannelStats`] for all incoming channels which have tickets in them,
     /// or had neglected tickets.
-    fn ticket_statistics(&self) -> Result<ChannelStats, Self::NodeTicketError> {
-        Ok(self.ticket_management().ticket_stats(None)?)
+    fn ticket_statistics(
+        &self,
+    ) -> CompoundResult<
+        ChannelStats,
+        <<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError,
+        <Self::TicketManager as TicketManagement>::Error,
+    > {
+        self.ticket_management()
+            .ticket_stats(None)
+            .map_err(CompoundError::right)
     }
 
     /// Redeems all redeemable tickets in all incoming channels.
@@ -62,20 +59,25 @@ pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
     async fn redeem_all_tickets<B: Into<HoprBalance> + Send>(
         &self,
         min_value: B,
-    ) -> Result<Vec<RedemptionResult>, Self::NodeTicketError> {
+    ) -> CompoundResult<
+        Vec<RedemptionResult>,
+        <<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError,
+        <Self::TicketManager as TicketManagement>::Error,
+    > {
         let min_value = min_value.into();
 
-        Ok(self
-            .ticket_management()
+        self.ticket_management()
             .redeem_in_channels(
                 self.chain_api().clone(),
                 None,
                 min_value.into(),
                 Some(Self::PENDING_TO_CLOSE_REDEMPTION_TOLERANCE),
             )
-            .await?
+            .await
+            .map_err(CompoundError::left)?
             .try_collect::<Vec<_>>()
-            .await?)
+            .await
+            .map_err(CompoundError::right)
     }
 
     /// Redeems all incoming tickets from the given issuer.
@@ -90,11 +92,14 @@ pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
         &self,
         issuer: A,
         min_value: B,
-    ) -> Result<Vec<RedemptionResult>, Self::NodeTicketError> {
+    ) -> CompoundResult<
+        Vec<RedemptionResult>,
+        <<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError,
+        <Self::TicketManager as TicketManagement>::Error,
+    > {
         let min_value = min_value.into();
 
-        Ok(self
-            .ticket_management()
+        self.ticket_management()
             .redeem_in_channels(
                 self.chain_api().clone(),
                 ChannelSelector::default()
@@ -104,8 +109,10 @@ pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
                 min_value.into(),
                 Some(Self::PENDING_TO_CLOSE_REDEMPTION_TOLERANCE),
             )
-            .await?
+            .await
+            .map_err(CompoundError::left)?
             .try_collect::<Vec<_>>()
-            .await?)
+            .await
+            .map_err(CompoundError::right)
     }
 }
