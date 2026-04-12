@@ -51,5 +51,5 @@ where
     }
 }
 
-/// Simple alias `Result<T, CompoundError<E1, E2>>`.
+/// Simple alias [`Result<T, CompoundError<E1, E2>>`](CompoundError).
 pub type CompoundResult<T, E1, E2> = Result<T, CompoundError<E1, E2>>;
