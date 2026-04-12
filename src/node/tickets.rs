@@ -6,12 +6,13 @@ use hopr_types::{
 
 use crate::{
     chain::{ChannelSelector, HoprChainApi},
-    node::{CompoundError, CompoundResult, HoprNodeChainOperations},
+    node::{CompoundResult, EitherErr, HoprNodeChainOperations},
     tickets::{ChannelStats, RedemptionResult, TicketManagement, TicketManagementExt},
 };
 
 /// Ticket events emitted from the packet processing pipeline.
 #[derive(Debug, Clone, strum::EnumIs, strum::EnumTryAs)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum TicketEvent {
     /// A winning ticket was received.
     WinningTicket(Box<RedeemableTicket>),
@@ -48,9 +49,7 @@ pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
         <<Self as HoprNodeChainOperations>::ChainApi as HoprChainApi>::ChainError,
         <Self::TicketManager as TicketManagement>::Error,
     > {
-        self.ticket_management()
-            .ticket_stats(None)
-            .map_err(CompoundError::right)
+        self.ticket_management().ticket_stats(None).map_err(EitherErr::right)
     }
 
     /// Redeems all redeemable tickets in all incoming channels.
@@ -74,10 +73,10 @@ pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
                 Some(Self::PENDING_TO_CLOSE_REDEMPTION_TOLERANCE),
             )
             .await
-            .map_err(CompoundError::left)?
+            .map_err(EitherErr::left)?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(CompoundError::right)
+            .map_err(EitherErr::right)
     }
 
     /// Redeems all incoming tickets from the given issuer.
@@ -110,9 +109,9 @@ pub trait HoprNodeTicketOperations: HoprNodeChainOperations {
                 Some(Self::PENDING_TO_CLOSE_REDEMPTION_TOLERANCE),
             )
             .await
-            .map_err(CompoundError::left)?
+            .map_err(EitherErr::left)?
             .try_collect::<Vec<_>>()
             .await
-            .map_err(CompoundError::right)
+            .map_err(EitherErr::right)
     }
 }

@@ -1,6 +1,6 @@
 //! High-level HOPR node API trait definitions.
 //!
-//! This module defines the external API interface for interacting with a running HOPR node.
+//! This module defines the external public API interface for interacting with a running HOPR node.
 
 mod chain;
 mod network;
@@ -17,39 +17,57 @@ pub use crate::chain::{ChainInfo, ChannelId};
 
 /// General operations performed by a HOPR node.
 pub trait HoprNodeOperations {
-    /// Returns the [runtime status](state::HoprState) of the node.
-    fn status(&self) -> state::HoprState;
+    /// Returns the [runtime status](HoprState) of the node.
+    fn status(&self) -> HoprState;
 }
 
-/// Allows chaining two errors `E1` and `E2` into a single error type
+/// Allows combining two errors `L` and `R` into a single error type
 /// that acts transparently.
-#[derive(Debug, thiserror::Error)]
-pub enum CompoundError<E1, E2>
-where
-    E1: std::error::Error + Send + Sync + 'static,
-    E2: std::error::Error + Send + Sync + 'static,
-{
-    /// The first error.
+#[derive(Debug, Clone, Copy, thiserror::Error, strum::EnumTryAs)]
+pub enum EitherErr<L: std::error::Error, R: std::error::Error> {
+    /// The left error.
     #[error(transparent)]
-    Left(E1),
-    /// The second error.
+    Left(L),
+    /// The right error.
     #[error(transparent)]
-    Right(E2),
+    Right(R),
 }
 
-impl<E1, E2> CompoundError<E1, E2>
-where
-    E1: std::error::Error + Send + Sync + 'static,
-    E2: std::error::Error + Send + Sync + 'static,
-{
-    pub fn left<E: Into<E1>>(err: E) -> Self {
+impl<L: std::error::Error, R: std::error::Error> EitherErr<L, R> {
+    /// Creates a new [`EitherErr::Left`] with the given error.
+    #[inline]
+    pub fn left<E: Into<L>>(err: E) -> Self {
         Self::Left(err.into())
     }
 
-    pub fn right<E: Into<E2>>(err: E) -> Self {
+    /// Creates a new [`EitherErr::Right`] with the given error.
+    #[inline]
+    pub fn right<E: Into<R>>(err: E) -> Self {
         Self::Right(err.into())
     }
 }
 
-/// Simple alias [`Result<T, CompoundError<E1, E2>>`](CompoundError).
-pub type CompoundResult<T, E1, E2> = Result<T, CompoundError<E1, E2>>;
+/// Extension trait for converting an error into an [`EitherErr`].
+pub trait EitherErrExt: std::error::Error {
+    /// Converts this error into [`EitherErr::Left`].
+    #[inline]
+    fn into_left<R: std::error::Error>(self) -> EitherErr<Self, R>
+    where
+        Self: Sized,
+    {
+        EitherErr::Left(self)
+    }
+    /// Converts this error into [`EitherErr::Right`].
+    #[inline]
+    fn into_right<L: std::error::Error>(self) -> EitherErr<L, Self>
+    where
+        Self: Sized,
+    {
+        EitherErr::Right(self)
+    }
+}
+
+impl<T: ?Sized + std::error::Error> EitherErrExt for T {}
+
+/// Simple alias [`Result<T, EitherErr<E1, E2>>`](EitherErr).
+pub type CompoundResult<T, E1, E2> = Result<T, EitherErr<E1, E2>>;
