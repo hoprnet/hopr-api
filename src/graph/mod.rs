@@ -3,10 +3,29 @@ pub mod traits;
 pub mod types;
 
 pub use traits::{
-    CostFn, EdgeImmediateProtocolObservable, EdgeLinkObservable, NetworkGraphTraverse, NetworkGraphUpdate,
-    NetworkGraphView, NetworkGraphWrite,
+    CostFn, EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeObservable, EdgeObservableRead,
+    NetworkGraphTraverse, NetworkGraphUpdate, NetworkGraphView, NetworkGraphWrite,
 };
 pub use types::*;
+
+/// Read-only graph API for external consumers.
+///
+/// This trait is automatically implemented for types
+/// that implement both [`NetworkGraphView`] and [`NetworkGraphTraverse`]
+/// with the same node id.
+pub trait HoprGraphReadApi:
+    NetworkGraphView<NodeId = Self::HoprNodeId> + NetworkGraphTraverse<NodeId = Self::HoprNodeId>
+{
+    type HoprNodeId: Send;
+}
+
+impl<T, N> HoprGraphReadApi for T
+where
+    T: NetworkGraphView<NodeId = N> + NetworkGraphTraverse<NodeId = N>,
+    N: Send,
+{
+    type HoprNodeId = N;
+}
 
 /// Complete set of HOPR graph operation APIs.
 ///

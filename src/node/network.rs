@@ -1,64 +1,42 @@
-use std::time::Duration;
+//! Network operations derived purely from [`NetworkView`].
+//!
+//! These operations are automatically available on any type that implements [`HasNetworkView`].
 
-use hopr_types::{crypto::prelude::OffchainPublicKey, primitive::prelude::Address};
-use libp2p_identity::PeerId;
-use multiaddr::Multiaddr;
+use std::collections::HashSet;
 
-use crate::{graph::traits::EdgeObservable, network::Health};
+use crate::{Multiaddr, PeerId, network::{Health, NetworkView}};
 
-/// High-level network operations.
-#[async_trait::async_trait]
-pub trait HoprNodeNetworkOperations {
-    /// Error type for node operations.
-    type NodeNetworkError: std::error::Error + Send + Sync + 'static;
+use super::accessors::HasNetworkView;
 
-    /// Observable type returned by peer information queries.
-    type TransportObservable: EdgeObservable + Send;
+/// High-level network operations backed by [`NetworkView`](crate::network::NetworkView).
+///
+/// Automatically implemented for any type with a [`HasNetworkView`] accessor.
+pub trait HoprNodeNetworkOperations: HasNetworkView {
+    /// Returns the current network health indicator.
+    fn network_health(&self) -> Health {
+        self.network_view().health()
+    }
 
-    // === Identity ===
+    /// Returns the set of currently connected peers.
+    fn network_connected_peers(&self) -> HashSet<PeerId> {
+        self.network_view().connected_peers()
+    }
 
-    /// Returns the PeerId of this node used in the transport layer.
-    fn me_peer_id(&self) -> PeerId;
+    /// Returns the multiaddresses this node is listening on.
+    fn local_multiaddresses(&self) -> HashSet<Multiaddr> {
+        self.network_view().listening_as()
+    }
 
-    /// Allows translation of a peer's transport identity to the corresponding off-chain key.
-    ///
-    /// The implementor may wish to cache this operation for performance reasons.
-    fn peer_id_to_offchain_key(&self, peer_id: &PeerId) -> Result<OffchainPublicKey, Self::NodeNetworkError>;
+    /// Returns whether the given peer is currently connected.
+    fn is_connected(&self, peer: &PeerId) -> bool {
+        self.network_view().is_connected(peer)
+    }
 
-    /// Returns all public nodes announced on the network.
-    async fn get_public_nodes(&self) -> Result<Vec<(PeerId, Address, Vec<Multiaddr>)>, Self::NodeNetworkError>;
-
-    /// Returns the current network health status.
-    async fn network_health(&self) -> Health;
-
-    /// Returns all currently connected peers.
-    async fn network_connected_peers(&self) -> Result<Vec<PeerId>, Self::NodeNetworkError>;
-
-    /// Returns observations for a specific peer.
-    fn network_peer_info(&self, peer: &PeerId) -> Option<Self::TransportObservable>;
-
-    /// Returns all network peers with quality above the minimum score.
-    async fn all_network_peers(
-        &self,
-        minimum_score: f64,
-    ) -> Result<Vec<(Option<Address>, PeerId, Self::TransportObservable)>, Self::NodeNetworkError>;
-
-    // === Transport ===
-
-    /// Returns the multiaddresses this node is announcing.
-    fn local_multiaddresses(&self) -> Vec<Multiaddr>;
-
-    /// Returns the multiaddresses this node is listening to.
-    async fn listening_multiaddresses(&self) -> Vec<Multiaddr>;
-
-    /// Returns the observed multiaddresses for a peer.
-    async fn network_observed_multiaddresses(&self, peer: &PeerId) -> Vec<Multiaddr>;
-
-    /// Returns the multiaddresses announced on-chain for a peer.
-    async fn multiaddresses_announced_on_chain(&self, peer: &PeerId) -> Result<Vec<Multiaddr>, Self::NodeNetworkError>;
-
-    // === Peers ===
-
-    /// Pings a peer and returns the round-trip time along with observable data.
-    async fn ping(&self, peer: &PeerId) -> Result<(Duration, Self::TransportObservable), Self::NodeNetworkError>;
+    /// Returns the set of discovered peers (may include disconnected peers).
+    fn discovered_peers(&self) -> HashSet<PeerId> {
+        self.network_view().discovered_peers()
+    }
 }
+
+/// Blanket implementation for all types with network view access.
+impl<T: HasNetworkView> HoprNodeNetworkOperations for T {}
