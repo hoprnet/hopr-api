@@ -19,6 +19,8 @@
 
 mod accessors;
 mod incentive;
+#[cfg(feature = "node-session-client")]
+mod session;
 mod state;
 mod status;
 mod transport;
@@ -26,6 +28,8 @@ mod types;
 
 pub use accessors::*;
 pub use incentive::*;
+#[cfg(feature = "node-session-client")]
+pub use session::*;
 pub use state::*;
 pub use status::*;
 pub use transport::*;

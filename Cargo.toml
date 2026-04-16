@@ -20,6 +20,7 @@ full = [
   "network",
   "graph",
   "node",
+  "node-session-client",
   "serde",
   "tickets",
   "types-chain",
@@ -38,6 +39,7 @@ node = [
   "dep:atomic_enum",
   "dep:auto_impl",
 ]
+node-session-client = ["node"]
 serde = ["hopr-types/serde", "dep:serde"]
 tickets = ["chain", "dep:auto_impl"]
 types-random = ["hopr-types/random"]
