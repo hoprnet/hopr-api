@@ -9,19 +9,16 @@
 //! combinations of accessors:
 //!
 //! - [`HasChainApi`] — chain interaction
-//! - [`HasNetworkView`] — network connectivity (read-only)
+//! - [`HasNetworkView`] — network connectivity (read-only [`NetworkView`](crate::network::NetworkView))
 //! - [`HasGraphView`] — network graph (read-only)
-//! - [`HasTransportApi`] — transport operations (ping, peer observations)
+//! - [`HasTransportApi`] — transport operations (ping, observed multiaddresses)
 //! - [`HasTicketManagement`] — ticket processing
 //!
 //! Composed traits:
 //! - [`HoprIncentiveOperations`] — channels + balances + ticket redemption
-//! - [`HoprNodeNetworkOperations`] — network health + connectivity
-//! - [`HoprNodeChainNetworkOperationsExt`] — cross-domain peer identity translation
 
 mod accessors;
 mod incentive;
-mod network;
 mod state;
 mod status;
 mod transport;
@@ -29,8 +26,6 @@ mod types;
 
 pub use accessors::*;
 pub use incentive::*;
-pub use multiaddr::PeerId;
-pub use network::*;
 pub use state::*;
 pub use status::*;
 pub use transport::*;
@@ -98,35 +93,3 @@ impl<T: ?Sized + std::error::Error> EitherErrExt for T {}
 
 /// Simple alias [`Result<T, EitherErr<E1, E2>>`](EitherErr).
 pub type CompoundResult<T, E1, E2> = Result<T, EitherErr<E1, E2>>;
-
-// ---------------------------------------------------------------------------
-// Cross-domain operations (chain + network)
-// ---------------------------------------------------------------------------
-
-/// Chain key resolution operations.
-///
-/// Automatically implemented for types with [`HasChainApi`].
-pub trait HoprChainKeyOperationsExt: HasChainApi {
-    /// Translates an off-chain public key to the corresponding on-chain address.
-    fn offchain_key_to_chain_key(
-        &self,
-        offchain_key: &crate::OffchainPublicKey,
-    ) -> Result<Option<crate::Address>, <Self::ChainApi as crate::chain::HoprChainApi>::ChainError> {
-        use crate::chain::ChainKeyOperations;
-        self.chain_api().packet_key_to_chain_key(offchain_key)
-    }
-
-    /// Translates an on-chain address to the corresponding off-chain public key and PeerId.
-    fn chain_key_to_peerid<A: Into<crate::Address> + Send>(
-        &self,
-        address: A,
-    ) -> Result<Option<PeerId>, <Self::ChainApi as crate::chain::HoprChainApi>::ChainError> {
-        use crate::chain::ChainKeyOperations;
-        self.chain_api()
-            .chain_key_to_packet_key(&address.into())
-            .map(|pk| pk.map(|v| v.into()))
-    }
-}
-
-/// Blanket implementation for all types with chain access.
-impl<T> HoprChainKeyOperationsExt for T where T: ?Sized + HasChainApi {}
