@@ -31,5 +31,4 @@ os = [
 ] # Ignore advisories for operating systems other than these
 
 [yanked]
-enabled = true      # Warn for yanked crates in Cargo.lock (default: true)
-update_index = true # Auto-update the crates.io index (default: true)
+enabled = false
