@@ -31,4 +31,7 @@ os = [
 ] # Ignore advisories for operating systems other than these
 
 [yanked]
+# Disabled: yanked transitive dependencies (e.g. from alloy) cause CI failures
+# that we cannot resolve without upstream releasing a fix. Re-enable once the
+# dependency tree no longer pulls yanked crates.
 enabled = false
