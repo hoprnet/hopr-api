@@ -1,3 +1,14 @@
+//! Network graph API traits: topology, pathfinding, and edge quality observations.
+//!
+//! - [`NetworkGraphView`] — read-only node/edge queries
+//! - [`NetworkGraphWrite`] — graph mutation (add/remove nodes and edges)
+//! - [`NetworkGraphUpdate`] — record measurements from probes and transport
+//! - [`NetworkGraphTraverse`] — pathfinding (simple paths, loopbacks)
+//! - [`HoprGraphApi`] — composite of all graph traits (full read+write access)
+//! - [`HoprGraphReadApi`] — composite of view+traverse (read-only access)
+//! - [`CostFn`] — cost function trait for path selection
+//! - Edge observable traits for quality measurements (QoS, latency, capacity)
+
 pub mod costs;
 pub mod traits;
 pub mod types;
