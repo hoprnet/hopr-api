@@ -1,17 +1,40 @@
 //! High-level HOPR node API trait definitions.
 //!
 //! This module defines the external public API interface for interacting with a running HOPR node.
+//!
+//! ## Architecture
+//!
+//! The API is structured around **accessor traits** (`Has*`) that provide typed references
+//! to individual components, and **composed traits** that are blanket-implemented over
+//! combinations of accessors:
+//!
+//! - [`HasChainApi`] — chain interaction
+//! - [`HasNetworkView`] — network connectivity (read-only [`NetworkView`](crate::network::NetworkView))
+//! - [`HasGraphView`] — network graph (read-only)
+//! - [`HasTransportApi`] — transport operations (ping, observed multiaddresses)
+//! - [`HasTicketManagement`] — ticket processing
+//!
+//! Composed traits:
+//! - [`IncentiveChannelOperations`] — channels, balances, withdrawals, chain info
+//! - [`IncentiveRedeemOperations`] — ticket redemption and statistics (relay nodes only)
 
-mod chain;
-mod network;
+mod accessors;
+mod incentive;
+#[cfg(feature = "node-session-client")]
+mod session;
 mod state;
-mod tickets;
+mod status;
+mod transport;
+mod types;
 
-pub use chain::*;
-pub use multiaddr::PeerId;
-pub use network::*;
+pub use accessors::*;
+pub use incentive::*;
+#[cfg(feature = "node-session-client")]
+pub use session::*;
 pub use state::*;
-pub use tickets::*;
+pub use status::*;
+pub use transport::*;
+pub use types::*;
 
 pub use crate::chain::{ChainInfo, ChannelId};
 
@@ -20,6 +43,10 @@ pub trait HoprNodeOperations {
     /// Returns the [runtime status](HoprState) of the node.
     fn status(&self) -> HoprState;
 }
+
+// ---------------------------------------------------------------------------
+// Error compounding utilities
+// ---------------------------------------------------------------------------
 
 /// Allows combining two errors `L` and `R` into a single error type
 /// that acts transparently.
