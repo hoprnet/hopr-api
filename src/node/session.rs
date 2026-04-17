@@ -12,6 +12,7 @@ use crate::Address;
 /// by the implementor (typically hopr-lib), keeping transport-level types
 /// out of the API crate.
 #[async_trait::async_trait]
+#[auto_impl::auto_impl(&, Arc)]
 pub trait HoprSessionClientOperations: Send + Sync {
     /// An established session implementing async read/write.
     type Session: AsyncRead + AsyncWrite + Send + Unpin;

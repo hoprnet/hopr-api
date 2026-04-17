@@ -1,7 +1,9 @@
-//! Unified incentive operations: channels, balances, withdrawals, and ticket redemption.
+//! Incentive operations split into channel management and ticket redemption.
 //!
-//! This trait is automatically implemented for any type providing both
-//! [`HasChainApi`] and [`HasTicketManagement`] access.
+//! - [`IncentiveChannelOperations`]: channels, balances, withdrawals, chain info.
+//!   Available on all nodes (including edge nodes without ticket management).
+//! - [`IncentiveRedeemOperations`]: ticket redemption and statistics.
+//!   Only available on relay nodes with [`HasTicketManagement`].
 
 use std::convert::identity;
 
@@ -20,28 +22,19 @@ use crate::{
 
 use super::ChannelId;
 
-/// Unified incentive operations combining channel management, balance queries,
-/// withdrawals, and ticket redemption.
+/// Channel management, balance queries, withdrawals, and chain info.
 ///
-/// All methods have default implementations that delegate to [`HasChainApi`]
-/// and [`HasTicketManagement`] accessors.
+/// Available on all node types — requires only [`HasChainApi`].
+/// Automatically implemented for any type providing chain access.
 #[async_trait::async_trait]
-pub trait HoprIncentiveOperations: HasChainApi + HasTicketManagement {
+pub trait IncentiveChannelOperations: HasChainApi {
     /// Timeout multiplier applied to [`ChainValues::typical_resolution_time`]
     /// when waiting for on-chain operations to be confirmed via the event bus.
     const CHAIN_OPERATION_TIMEOUT_MULTIPLIER: u32 = 2;
 
-    /// How long before the channel closure grace period elapses should we still try to redeem tickets.
-    const PENDING_TO_CLOSE_REDEMPTION_TOLERANCE: std::time::Duration = std::time::Duration::from_secs(30);
-
-    // -----------------------------------------------------------------------
-    // Channel operations
-    // -----------------------------------------------------------------------
+    // --- Channel operations ---
 
     /// Opens a channel from the node to the given `destination` with the given `amount` as the initial stake.
-    ///
-    /// On success, returns the ID of the new channel as [output](ChainOutput).
-    /// Returns an error if the channel exists and is not closed, or the operation times out.
     async fn open_channel<A: Into<Address> + Send>(
         &self,
         destination: A,
@@ -83,8 +76,6 @@ pub trait HoprIncentiveOperations: HasChainApi + HasTicketManagement {
     }
 
     /// Funds an existing channel with the given `amount`.
-    ///
-    /// Returns an error if the channel does not exist or is not [opened](ChannelStatus).
     async fn fund_channel(
         &self,
         channel_id: &ChannelId,
@@ -118,10 +109,7 @@ pub trait HoprIncentiveOperations: HasChainApi + HasTicketManagement {
         Ok(res.into())
     }
 
-    /// Initiates or finalizes the closure of a channel with the given `channel_id`.
-    ///
-    /// Returns an error if the channel does not exist, or its closure has been already finalized.
-    /// On success, returns the new [status](ChannelStatus) of the channel as [output](ChainOutput).
+    /// Initiates or finalizes the closure of a channel.
     async fn close_channel_by_id(
         &self,
         channel_id: &ChannelId,
@@ -222,9 +210,7 @@ pub trait HoprIncentiveOperations: HasChainApi + HasTicketManagement {
             .await)
     }
 
-    // -----------------------------------------------------------------------
-    // Balance & withdrawal
-    // -----------------------------------------------------------------------
+    // --- Balance & withdrawal ---
 
     /// Returns the balance of [`Currency`] in the node's account.
     async fn get_balance<C: Currency + Send>(
@@ -259,9 +245,7 @@ pub trait HoprIncentiveOperations: HasChainApi + HasTicketManagement {
             .into())
     }
 
-    // -----------------------------------------------------------------------
-    // Chain info shortcuts
-    // -----------------------------------------------------------------------
+    // --- Chain info ---
 
     /// Returns information about the connected blockchain.
     async fn chain_info(&self) -> Result<ChainInfo, <Self::ChainApi as HoprChainApi>::ChainError> {
@@ -287,9 +271,32 @@ pub trait HoprIncentiveOperations: HasChainApi + HasTicketManagement {
         self.chain_api().channel_closure_notice_period().await
     }
 
-    // -----------------------------------------------------------------------
-    // Ticket redemption
-    // -----------------------------------------------------------------------
+    // --- Announced peers ---
+
+    /// Returns all peers that have been publicly announced on-chain.
+    async fn announced_peers(&self) -> Result<Vec<AccountEntry>, <Self::ChainApi as HoprChainApi>::ChainError> {
+        Ok(self
+            .chain_api()
+            .stream_accounts(AccountSelector {
+                public_only: true,
+                ..Default::default()
+            })?
+            .collect()
+            .await)
+    }
+}
+
+/// Blanket: any type with chain access gets channel operations.
+impl<T> IncentiveChannelOperations for T where T: HasChainApi + Send + Sync {}
+
+/// Ticket redemption and statistics.
+///
+/// Only available on relay nodes — requires both [`HasChainApi`] and [`HasTicketManagement`].
+/// Automatically implemented for any type providing both.
+#[async_trait::async_trait]
+pub trait IncentiveRedeemOperations: HasChainApi + HasTicketManagement {
+    /// How long before the channel closure grace period elapses should we still try to redeem tickets.
+    const PENDING_TO_CLOSE_REDEMPTION_TOLERANCE: std::time::Duration = std::time::Duration::from_secs(30);
 
     /// Redeems all redeemable tickets in all incoming channels.
     ///
@@ -359,23 +366,7 @@ pub trait HoprIncentiveOperations: HasChainApi + HasTicketManagement {
     > {
         self.ticket_management().ticket_stats(None).map_err(EitherErr::right)
     }
-
-    // -----------------------------------------------------------------------
-    // Announced peers
-    // -----------------------------------------------------------------------
-
-    /// Returns all peers that have been publicly announced on-chain.
-    async fn announced_peers(&self) -> Result<Vec<AccountEntry>, <Self::ChainApi as HoprChainApi>::ChainError> {
-        Ok(self
-            .chain_api()
-            .stream_accounts(AccountSelector {
-                public_only: true,
-                ..Default::default()
-            })?
-            .collect()
-            .await)
-    }
 }
 
-/// Blanket implementation: any type with chain and ticket access gets full incentive operations.
-impl<T> HoprIncentiveOperations for T where T: HasChainApi + HasTicketManagement + Send + Sync {}
+/// Blanket: any type with chain and ticket access gets redeem operations.
+impl<T> IncentiveRedeemOperations for T where T: HasChainApi + HasTicketManagement + Send + Sync {}

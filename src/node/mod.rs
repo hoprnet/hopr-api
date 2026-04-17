@@ -15,7 +15,8 @@
 //! - [`HasTicketManagement`] — ticket processing
 //!
 //! Composed traits:
-//! - [`HoprIncentiveOperations`] — channels + balances + ticket redemption
+//! - [`IncentiveChannelOperations`] — channels, balances, withdrawals, chain info
+//! - [`IncentiveRedeemOperations`] — ticket redemption and statistics (relay nodes only)
 
 mod accessors;
 mod incentive;
