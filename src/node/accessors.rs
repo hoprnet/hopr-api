@@ -4,7 +4,7 @@
 //! - A typed reference to the component's API
 //! - A sync `status()` method reporting component health
 //!
-//! Composed traits (`HoprIncentiveOperations`, `HoprNodeNetworkOperations`, etc.)
+//! Composed traits (`IncentiveChannelOperations`, `IncentiveRedeemOperations`, etc.)
 //! are blanket-implemented over combinations of these accessors.
 
 use std::time::Duration;
@@ -30,6 +30,7 @@ use super::{
 // ---------------------------------------------------------------------------
 
 /// Provides access to the chain component of a HOPR node.
+#[auto_impl::auto_impl(&, Arc)]
 pub trait HasChainApi {
     /// The concrete chain API implementation.
     type ChainApi: HoprChainApi + Clone + Send + Sync + 'static;
@@ -48,10 +49,6 @@ pub trait HasChainApi {
 
     /// Spawns an asynchronous waiter that subscribes to [`ChainEvent`]s
     /// and resolves when `predicate` matches or `timeout` elapses.
-    ///
-    /// The implementor decides which async runtime is used to spawn the waiter.
-    /// The `context` is a human-readable description for logging.
-    /// The `timeout` is usually already pre-multiplied with the operation timeout multiplier.
     fn wait_for_on_chain_event<F>(
         &self,
         predicate: F,
@@ -67,6 +64,7 @@ pub trait HasChainApi {
 // ---------------------------------------------------------------------------
 
 /// Provides read-only access to the network layer (peer connectivity, addresses).
+#[auto_impl::auto_impl(&, Arc)]
 pub trait HasNetworkView {
     /// The concrete [`NetworkView`] implementation.
     type NetworkView: NetworkView + Send + Sync;
@@ -83,9 +81,7 @@ pub trait HasNetworkView {
 // ---------------------------------------------------------------------------
 
 /// Provides read-only access to the network graph.
-///
-/// Only exposes [`NetworkGraphView`] (node/edge queries) and
-/// [`NetworkGraphTraverse`] (pathfinding). Write operations are internal.
+#[auto_impl::auto_impl(&, Arc)]
 pub trait HasGraphView {
     /// The concrete graph type, constrained to read-only operations.
     type Graph: NetworkGraphView<NodeId = OffchainPublicKey>
@@ -102,9 +98,7 @@ pub trait HasGraphView {
 // ---------------------------------------------------------------------------
 
 /// Provides access to transport-level operations (ping, peer observations).
-///
-/// Session management (`connect_to`) is handled separately at the hopr-lib level
-/// under the `session-client` feature.
+#[auto_impl::auto_impl(&, Arc)]
 pub trait HasTransportApi {
     /// The concrete [`TransportOperations`] implementation.
     type Transport: TransportOperations;

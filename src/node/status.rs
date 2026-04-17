@@ -2,7 +2,7 @@
 ///
 /// Each component (chain, network, transport, tickets) reports its own status
 /// independently through its corresponding `Has*` accessor trait.
-#[derive(Debug, Clone, PartialEq, Eq, strum::Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, strum::Display, strum::EnumIs)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ComponentStatus {
     /// Component is fully operational.
@@ -17,11 +17,4 @@ pub enum ComponentStatus {
     /// Component is not operational.
     #[strum(to_string = "Unavailable: {0}")]
     Unavailable(String),
-}
-
-impl ComponentStatus {
-    /// Returns `true` if the component is fully operational.
-    pub fn is_ready(&self) -> bool {
-        matches!(self, Self::Ready)
-    }
 }
