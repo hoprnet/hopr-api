@@ -10,7 +10,7 @@
 /// Nodes that do not run a session server simply omit calling `with_session_server`.
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(Arc)]
-pub trait HoprSessionServer: Clone + Send + 'static {
+pub trait HoprSessionServer {
     /// An incoming session to be processed.
     type Session: Send;
     /// Error type for session processing.
