@@ -20,10 +20,8 @@
 
 mod accessors;
 mod incentive;
-#[cfg(feature = "node-session-client")]
-mod session;
-#[cfg(feature = "node-session-server")]
-mod session_server;
+#[cfg(any(feature = "node-session-client", feature = "node-session-server"))]
+pub mod session;
 mod state;
 mod status;
 mod transport;
@@ -32,9 +30,9 @@ mod types;
 pub use accessors::*;
 pub use incentive::*;
 #[cfg(feature = "node-session-client")]
-pub use session::*;
+pub use session::client::*;
 #[cfg(feature = "node-session-server")]
-pub use session_server::*;
+pub use session::server::*;
 pub use state::*;
 pub use status::*;
 pub use transport::*;
