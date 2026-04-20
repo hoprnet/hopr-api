@@ -30,7 +30,7 @@ full = [
 ]
 chain = ["dep:auto_impl", "types-chain", "dep:auto_impl"]
 ct = []
-network = []
+network = ["dep:auto_impl"]
 graph = ["dep:auto_impl"]
 node = [
   "chain",
