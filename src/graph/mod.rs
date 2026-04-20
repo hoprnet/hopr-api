@@ -1,9 +1,63 @@
+//! Network graph API traits: topology, pathfinding, and edge quality observations.
+//!
+//! - [`NetworkGraphView`] — read-only node/edge queries
+//! - [`NetworkGraphWrite`] — graph mutation (add/remove nodes and edges)
+//! - [`NetworkGraphUpdate`] — record measurements from probes and transport
+//! - [`NetworkGraphTraverse`] — pathfinding (simple paths, loopbacks)
+//! - [`HoprGraphApi`] — composite of all graph traits (full read+write access)
+//! - [`HoprGraphReadApi`] — composite of view+traverse (read-only access)
+//! - [`CostFn`] — cost function trait for path selection
+//! - Edge observable traits for quality measurements (QoS, latency, capacity)
+
 pub mod costs;
 pub mod traits;
 pub mod types;
 
 pub use traits::{
-    CostFn, EdgeImmediateProtocolObservable, EdgeLinkObservable, NetworkGraphTraverse, NetworkGraphUpdate,
-    NetworkGraphView, NetworkGraphWrite,
+    CostFn, EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeObservable, EdgeObservableRead,
+    NetworkGraphTraverse, NetworkGraphUpdate, NetworkGraphView, NetworkGraphWrite,
 };
 pub use types::*;
+
+/// Read-only graph API for external consumers.
+///
+/// This trait is automatically implemented for types
+/// that implement both [`NetworkGraphView`] and [`NetworkGraphTraverse`]
+/// with the same node id.
+pub trait HoprGraphReadApi:
+    NetworkGraphView<NodeId = Self::HoprNodeId> + NetworkGraphTraverse<NodeId = Self::HoprNodeId>
+{
+    type HoprNodeId: Send;
+}
+
+impl<T, N> HoprGraphReadApi for T
+where
+    T: NetworkGraphView<NodeId = N> + NetworkGraphTraverse<NodeId = N>,
+    N: Send,
+{
+    type HoprNodeId = N;
+}
+
+/// Complete set of HOPR graph operation APIs.
+///
+/// This trait is automatically implemented for types
+/// that implement all the individual graph API traits with the same node id.
+pub trait HoprGraphApi:
+    NetworkGraphView<NodeId = Self::HoprNodeId>
+    + NetworkGraphUpdate
+    + NetworkGraphWrite<NodeId = Self::HoprNodeId>
+    + NetworkGraphTraverse<NodeId = Self::HoprNodeId>
+{
+    type HoprNodeId: Send;
+}
+
+impl<T, N> HoprGraphApi for T
+where
+    T: NetworkGraphView<NodeId = N>
+        + NetworkGraphUpdate
+        + NetworkGraphWrite<NodeId = N>
+        + NetworkGraphTraverse<NodeId = N>,
+    N: Send,
+{
+    type HoprNodeId = N;
+}

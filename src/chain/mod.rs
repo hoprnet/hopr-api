@@ -1,3 +1,13 @@
+//! On-chain operations API traits.
+//!
+//! Fine-grained traits for blockchain interaction, composed into [`HoprChainApi`]:
+//! - Account operations (read/write)
+//! - Channel operations (read/write)
+//! - Safe operations (read/write)
+//! - Key operations (packet↔chain key mapping)
+//! - Chain events (subscription)
+//! - Chain values (configuration queries)
+
 mod accounts;
 mod channels;
 mod events;

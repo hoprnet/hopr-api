@@ -1,96 +1,102 @@
 //! High-level HOPR node API trait definitions.
 //!
-//! This module defines the external API interface for interacting with a running HOPR node.
-//! The `HoprNodeNetworkOperations` and `HoprNodeOperations` traits provide the
-//! operations available to external consumers, abstracting over implementation details.
+//! This module defines the external public API interface for interacting with a running HOPR node.
+//!
+//! ## Architecture
+//!
+//! The API is structured around **accessor traits** (`Has*`) that provide typed references
+//! to individual components, and **composed traits** that are blanket-implemented over
+//! combinations of accessors:
+//!
+//! - [`HasChainApi`] — chain interaction
+//! - [`HasNetworkView`] — network connectivity (read-only [`NetworkView`](crate::network::NetworkView))
+//! - [`HasGraphView`] — network graph (read-only)
+//! - [`HasTransportApi`] — transport operations (ping, observed multiaddresses)
+//! - [`HasTicketManagement`] — ticket processing
+//!
+//! Composed traits:
+//! - [`IncentiveChannelOperations`] — channels, balances, withdrawals, chain info
+//! - [`IncentiveRedeemOperations`] — ticket redemption and statistics (relay nodes only)
 
-pub mod state;
+mod accessors;
+mod incentive;
+#[cfg(any(feature = "node-session-client", feature = "node-session-server"))]
+pub mod session;
+mod state;
+mod status;
+mod transport;
+mod types;
 
-use std::time::Duration;
+pub use accessors::*;
+pub use incentive::*;
+#[cfg(feature = "node-session-client")]
+pub use session::client::*;
+#[cfg(feature = "node-session-server")]
+pub use session::server::*;
+pub use state::*;
+pub use status::*;
+pub use transport::*;
+pub use types::*;
 
-use hopr_types::{crypto::prelude::Hash, primitive::prelude::Address};
-use multiaddr::Multiaddr;
-pub use multiaddr::PeerId;
+pub use crate::chain::{ChainInfo, ChannelId};
 
-pub use crate::chain::ChainInfo;
-use crate::{chain::ChannelId, graph::traits::EdgeObservable, network::Health};
-
-/// Result of opening a channel on-chain.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OpenChannelResult {
-    /// Transaction hash of the channel open operation.
-    pub tx_hash: Hash,
-    /// The ID of the opened channel.
-    pub channel_id: ChannelId,
-}
-
-/// Result of closing a channel on-chain.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CloseChannelResult {
-    /// Transaction hash of the channel close operation.
-    pub tx_hash: Hash,
-}
-
-/// Configuration for the Safe module.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SafeModuleConfig {
-    /// Address of the Safe contract.
-    pub safe_address: Address,
-    /// Address of the module contract.
-    pub module_address: Address,
-}
-
-/// High-level network operations.
-#[async_trait::async_trait]
-pub trait HoprNodeNetworkOperations {
-    /// Error type for node operations.
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    /// Observable type returned by peer information queries.
-    type TransportObservable: EdgeObservable + Send;
-
-    // === Identity ===
-
-    /// Returns the PeerId of this node used in the transport layer.
-    fn me_peer_id(&self) -> PeerId;
-
-    /// Returns all public nodes announced on the network.
-    async fn get_public_nodes(&self) -> Result<Vec<(PeerId, Address, Vec<Multiaddr>)>, Self::Error>;
-
-    /// Returns the current network health status.
-    async fn network_health(&self) -> Health;
-
-    /// Returns all currently connected peers.
-    async fn network_connected_peers(&self) -> Result<Vec<PeerId>, Self::Error>;
-
-    /// Returns observations for a specific peer.
-    fn network_peer_info(&self, peer: &PeerId) -> Option<Self::TransportObservable>;
-
-    /// Returns all network peers with quality above the minimum score.
-    async fn all_network_peers(
-        &self,
-        minimum_score: f64,
-    ) -> Result<Vec<(Option<Address>, PeerId, Self::TransportObservable)>, Self::Error>;
-
-    // === Transport ===
-
-    /// Returns the multiaddresses this node is announcing.
-    fn local_multiaddresses(&self) -> Vec<Multiaddr>;
-
-    /// Returns the multiaddresses this node is listening on.
-    async fn listening_multiaddresses(&self) -> Vec<Multiaddr>;
-
-    /// Returns the observed multiaddresses for a peer.
-    async fn network_observed_multiaddresses(&self, peer: &PeerId) -> Vec<Multiaddr>;
-
-    /// Returns the multiaddresses announced on-chain for a peer.
-    async fn multiaddresses_announced_on_chain(&self, peer: &PeerId) -> Result<Vec<Multiaddr>, Self::Error>;
-
-    // === Peers ===
-
-    /// Pings a peer and returns the round-trip time along with observable data.
-    async fn ping(&self, peer: &PeerId) -> Result<(Duration, Self::TransportObservable), Self::Error>;
-}
+/// General operations performed by a HOPR node.
 pub trait HoprNodeOperations {
-    fn status(&self) -> state::HoprState;
+    /// Returns the [runtime status](HoprState) of the node.
+    fn status(&self) -> HoprState;
 }
+
+// ---------------------------------------------------------------------------
+// Error compounding utilities
+// ---------------------------------------------------------------------------
+
+/// Allows combining two errors `L` and `R` into a single error type
+/// that acts transparently.
+#[derive(Debug, Clone, Copy, thiserror::Error, strum::EnumTryAs)]
+pub enum EitherErr<L: std::error::Error, R: std::error::Error> {
+    /// The left error.
+    #[error(transparent)]
+    Left(L),
+    /// The right error.
+    #[error(transparent)]
+    Right(R),
+}
+
+impl<L: std::error::Error, R: std::error::Error> EitherErr<L, R> {
+    /// Creates a new [`EitherErr::Left`] with the given error.
+    #[inline]
+    pub fn left<E: Into<L>>(err: E) -> Self {
+        Self::Left(err.into())
+    }
+
+    /// Creates a new [`EitherErr::Right`] with the given error.
+    #[inline]
+    pub fn right<E: Into<R>>(err: E) -> Self {
+        Self::Right(err.into())
+    }
+}
+
+/// Extension trait for converting an error into an [`EitherErr`].
+pub trait EitherErrExt: std::error::Error {
+    /// Converts this error into [`EitherErr::Left`].
+    #[inline]
+    fn into_left<R: std::error::Error>(self) -> EitherErr<Self, R>
+    where
+        Self: Sized,
+    {
+        EitherErr::Left(self)
+    }
+    /// Converts this error into [`EitherErr::Right`].
+    #[inline]
+    fn into_right<L: std::error::Error>(self) -> EitherErr<L, Self>
+    where
+        Self: Sized,
+    {
+        EitherErr::Right(self)
+    }
+}
+
+impl<T: ?Sized + std::error::Error> EitherErrExt for T {}
+
+/// Simple alias [`Result<T, EitherErr<E1, E2>>`](EitherErr).
+pub type CompoundResult<T, E1, E2> = Result<T, EitherErr<E1, E2>>;

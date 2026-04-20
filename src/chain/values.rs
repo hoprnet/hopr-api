@@ -68,4 +68,6 @@ pub trait ChainValues {
     async fn chain_info(&self) -> Result<ChainInfo, Self::Error>;
     /// Gets the ticket redemption stats for the given safe address.
     async fn redemption_stats<A: Into<Address> + Send>(&self, safe_addr: A) -> Result<RedemptionStats, Self::Error>;
+    /// Returns the expected time for on-chain events to be resolved.
+    async fn typical_resolution_time(&self) -> Result<Duration, Self::Error>;
 }

@@ -106,6 +106,15 @@ pub trait TicketManagement {
     ///
     /// Usually the stats could be non-persistent, but it is a choice of the implementation.
     fn ticket_stats(&self, channel_id: Option<&ChannelId>) -> Result<ChannelStats, Self::Error>;
+
+    /// Inserts an incoming winning ticket into the management queue.
+    ///
+    /// Returns any tickets that were neglected as a result of the insertion
+    /// (e.g. if the new ticket supersedes older ones in the same channel).
+    fn insert_incoming_ticket(
+        &self,
+        ticket: hopr_types::internal::prelude::RedeemableTicket,
+    ) -> Result<Vec<VerifiedTicket>, Self::Error>;
 }
 
 /// Asynchronous extension trait for [`TicketManagement`] that adds convenience methods for ticket management.
@@ -254,6 +263,11 @@ mod tests {
             ) -> Result<Vec<VerifiedTicket>, std::io::Error>;
 
             fn ticket_stats<'a>(&self, channel_id: Option<&'a ChannelId>) -> Result<ChannelStats, std::io::Error>;
+
+            fn insert_incoming_ticket(
+                &self,
+                ticket: hopr_types::internal::prelude::RedeemableTicket,
+            ) -> Result<Vec<VerifiedTicket>, std::io::Error>;
         }
     }
 
