@@ -21,6 +21,7 @@ full = [
   "graph",
   "node",
   "node-session-client",
+  "node-session-server",
   "serde",
   "tickets",
   "types-chain",
@@ -40,6 +41,7 @@ node = [
   "dep:auto_impl",
 ]
 node-session-client = ["node"]
+node-session-server = ["node"]
 serde = ["hopr-types/serde", "dep:serde"]
 tickets = ["chain", "dep:auto_impl"]
 types-random = ["hopr-types/random"]
