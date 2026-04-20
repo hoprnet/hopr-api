@@ -1,26 +1,27 @@
 //! Incentive operations split into channel management and ticket redemption.
 //!
-//! - [`IncentiveChannelOperations`]: channels, balances, withdrawals, chain info.
-//!   Available on all nodes (including edge nodes without ticket management).
-//! - [`IncentiveRedeemOperations`]: ticket redemption and statistics.
-//!   Only available on relay nodes with [`HasTicketManagement`].
+//! - [`IncentiveChannelOperations`]: channels, balances, withdrawals, chain info. Available on all nodes (including
+//!   edge nodes without ticket management).
+//! - [`IncentiveRedeemOperations`]: ticket redemption and statistics. Only available on relay nodes with
+//!   [`HasTicketManagement`].
 
 use std::convert::identity;
 
 use futures::{StreamExt, TryFutureExt, TryStreamExt};
 use hopr_types::{internal::prelude::*, primitive::prelude::*};
 
+use super::ChannelId;
 use crate::{
     chain::{
-        AccountSelector, ChainInfo, ChainReadAccountOperations, ChainReadChannelOperations,
-        ChainReadSafeOperations, ChainValues, ChainWriteAccountOperations, ChainWriteChannelOperations,
-        ChannelSelector, HoprChainApi,
+        AccountSelector, ChainInfo, ChainReadAccountOperations, ChainReadChannelOperations, ChainReadSafeOperations,
+        ChainValues, ChainWriteAccountOperations, ChainWriteChannelOperations, ChannelSelector, HoprChainApi,
     },
-    node::{ChainOutput, CompoundResult, EitherErr, accessors::{HasChainApi, HasTicketManagement}},
+    node::{
+        ChainOutput, CompoundResult, EitherErr,
+        accessors::{HasChainApi, HasTicketManagement},
+    },
     tickets::{ChannelStats, RedemptionResult, TicketManagement, TicketManagementExt},
 };
-
-use super::ChannelId;
 
 /// Channel management, balance queries, withdrawals, and chain info.
 ///

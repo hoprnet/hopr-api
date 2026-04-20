@@ -4,7 +4,6 @@ use std::future::Future;
 
 use hopr_types::{
     chain::chain_events::ChainEvent,
-    crypto::prelude::Hash,
     internal::prelude::{RedeemableTicket, Ticket},
     primitive::prelude::Address,
 };

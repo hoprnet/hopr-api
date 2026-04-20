@@ -12,17 +12,13 @@ use std::time::Duration;
 use futures::Stream;
 use hopr_types::chain::chain_events::ChainEvent;
 
+use super::{ComponentStatus, EventWaitResult, NodeOnchainIdentity, TicketEvent, transport::TransportOperations};
 use crate::{
+    OffchainPublicKey,
     chain::HoprChainApi,
     graph::{NetworkGraphTraverse, NetworkGraphView},
     network::NetworkView,
     tickets::TicketManagement,
-    OffchainPublicKey,
-};
-
-use super::{
-    ComponentStatus, EventWaitResult, NodeOnchainIdentity, TicketEvent,
-    transport::TransportOperations,
 };
 
 // ---------------------------------------------------------------------------
@@ -117,6 +113,7 @@ pub trait HasTransportApi {
 /// Provides access to the ticket management component.
 ///
 /// Only available on relay nodes that process tickets.
+#[auto_impl::auto_impl(&, Arc)]
 pub trait HasTicketManagement {
     /// The concrete [`TicketManagement`] implementation.
     type TicketManager: TicketManagement + Clone + Send + Sync + 'static;

@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::{graph::traits::EdgeObservable, Multiaddr, OffchainPublicKey};
+use crate::{Multiaddr, OffchainPublicKey, graph::traits::EdgeObservable};
 
 /// Minimal transport operations that require the full transport stack.
 ///

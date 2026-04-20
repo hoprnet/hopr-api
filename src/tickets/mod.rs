@@ -117,39 +117,6 @@ pub trait TicketManagement {
     ) -> Result<Vec<VerifiedTicket>, Self::Error>;
 }
 
-/// Noop implementation for nodes without ticket management (edge nodes).
-impl TicketManagement for () {
-    type Error = std::convert::Infallible;
-
-    fn redeem_stream<C: ChainWriteTicketOperations + Send + Sync + 'static>(
-        &self,
-        _client: C,
-        _channel_id: ChannelId,
-        _min_amount: Option<HoprBalance>,
-    ) -> Result<impl Stream<Item = Result<RedemptionResult, Self::Error>> + Send, Self::Error> {
-        Ok(futures::stream::empty())
-    }
-
-    fn neglect_tickets(
-        &self,
-        _channel_id: &ChannelId,
-        _max_ticket_index: Option<u64>,
-    ) -> Result<Vec<VerifiedTicket>, Self::Error> {
-        Ok(vec![])
-    }
-
-    fn ticket_stats(&self, _channel_id: Option<&ChannelId>) -> Result<ChannelStats, Self::Error> {
-        Ok(ChannelStats::default())
-    }
-
-    fn insert_incoming_ticket(
-        &self,
-        _ticket: hopr_types::internal::prelude::RedeemableTicket,
-    ) -> Result<Vec<VerifiedTicket>, Self::Error> {
-        Ok(vec![])
-    }
-}
-
 /// Asynchronous extension trait for [`TicketManagement`] that adds convenience methods for ticket management.
 ///
 /// Automatically implemented for each type that implements `TicketManagement`.
