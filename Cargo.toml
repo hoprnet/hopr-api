@@ -1,13 +1,13 @@
 [package]
 name = "hopr-api"
-version = "1.7.0"
+version = "1.7.1"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
 repository = "https://github.com/hoprnet/hopr-api"
 license = "GPL-3.0-only"
 edition = "2024"
-rust-version = "1.93"
+rust-version = "1.94"
 
 [lib]
 crate-type = ["rlib"]

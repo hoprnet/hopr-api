@@ -30,7 +30,7 @@ All modules are feature-gated:
 
 ```toml
 [dependencies]
-hopr-api = { git = "https://github.com/hoprnet/hopr-api", features = ["full"] }
+hopr-api = { version = "1.7.0", features = ["full"] }
 ```
 
 ## Development
