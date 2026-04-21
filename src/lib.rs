@@ -1,3 +1,4 @@
+// Crate-level documentation is sourced from the README.
 #![doc = include_str!("../README.md")]
 
 /// On-chain operations-related API traits.
