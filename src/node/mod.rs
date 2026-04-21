@@ -8,19 +8,20 @@
 //! to individual components, and **composed traits** that are blanket-implemented over
 //! combinations of accessors:
 //!
-//! - [`HasChainApi`] — chain interaction
-//! - [`HasNetworkView`] — network connectivity (read-only [`NetworkView`](crate::network::NetworkView))
-//! - [`HasGraphView`] — network graph (read-only)
-//! - [`HasTransportApi`] — transport operations (ping, observed multiaddresses)
-//! - [`HasTicketManagement`] — ticket processing
+//! - `HasChainApi` — chain interaction
+//! - `HasNetworkView` — network connectivity (read-only [`NetworkView`](crate::network::NetworkView))
+//! - `HasGraphView` — network graph (read-only)
+//! - `HasTransportApi` — transport operations (ping, observed multiaddresses)
+//! - `HasTicketManagement` — ticket processing
 //!
 //! Composed traits:
-//! - [`IncentiveChannelOperations`] — channels, balances, withdrawals, chain info
-//! - [`IncentiveRedeemOperations`] — ticket redemption and statistics (relay nodes only)
+//! - `IncentiveChannelOperations` — channels, balances, withdrawals, chain info
+//! - `IncentiveRedeemOperations` — ticket redemption and statistics (relay nodes only)
 
 mod accessors;
 mod incentive;
 #[cfg(any(feature = "node-session-client", feature = "node-session-server"))]
+/// Session APIs for outgoing/incoming HOPR sessions.
 pub mod session;
 mod state;
 mod status;
