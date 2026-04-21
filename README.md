@@ -1,5 +1,13 @@
 # hopr-api
 
+[![Crates.io](https://img.shields.io/crates/v/hopr-api)](https://crates.io/crates/hopr-api)
+[![docs.rs](https://img.shields.io/docsrs/hopr-api)](https://docs.rs/hopr-api)
+[![CI](https://github.com/hoprnet/hopr-api/actions/workflows/merge.yaml/badge.svg?branch=main)](https://github.com/hoprnet/hopr-api/actions/workflows/merge.yaml)
+[![Security](https://github.com/hoprnet/hopr-api/actions/workflows/checks-zizmor.yaml/badge.svg)](https://github.com/hoprnet/hopr-api/actions/workflows/checks-zizmor.yaml)
+[![License](https://img.shields.io/crates/l/hopr-api)](LICENSE)
+[![MSRV](https://img.shields.io/crates/msrv/hopr-api)](https://github.com/hoprnet/hopr-api)
+[![Crates.io Downloads](https://img.shields.io/crates/d/hopr-api)](https://crates.io/crates/hopr-api)
+
 Common high-level API traits for the [HOPR protocol](https://hoprnet.org/).
 
 This crate defines the public API surface as **traits only** — no concrete implementations.
