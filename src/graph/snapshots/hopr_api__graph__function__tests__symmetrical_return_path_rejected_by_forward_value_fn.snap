@@ -1,0 +1,6 @@
+---
+source: src/graph/function.rs
+expression: "PathCost\n{ after_first_edge: cost_after_first, after_last_edge: cost_after_last, }"
+---
+after_first_edge: -1
+after_last_edge: -0.95

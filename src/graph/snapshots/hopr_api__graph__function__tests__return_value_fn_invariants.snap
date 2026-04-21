@@ -1,0 +1,6 @@
+---
+source: src/graph/function.rs
+expression: "Invariants\n{ initial_value: value_fn.initial_value(), min_value: value_fn.min_value(), }"
+---
+initial_value: 1
+min_value: 0

@@ -222,20 +222,26 @@ pub trait NetworkGraphUpdate {
         N: MeasurableNode + Clone + Send + Sync + 'static;
 }
 
-/// Definition of a fold like cost function usable with graph traversal trait.
+/// A fold-like value function for graph traversal path scoring.
+///
+/// A **value function** produces scores where **higher is better** (to be maximized),
+/// as opposed to a **cost function** where lower is better (to be minimized).
+/// The accumulated value is folded over each edge in the path: edges that improve
+/// the path increase the value, while poor-quality edges decrease it.
+/// Paths whose value drops below [`min_value`](Self::min_value) are discarded.
 #[allow(clippy::type_complexity)]
-pub trait CostFn {
+pub trait ValueFn {
     type Weight: EdgeObservableRead + Send;
-    type Cost: Clone + PartialOrd + Send + Sync;
+    type Value: Clone + PartialOrd + Send + Sync;
 
-    /// The initial cost that will be modified by the cost function.
-    fn initial_cost(&self) -> Self::Cost;
+    /// The initial value that will be modified by the value function.
+    fn initial_value(&self) -> Self::Value;
 
-    /// The minumum cost, below which the cost function will force discard upon traversal.
-    fn min_cost(&self) -> Option<Self::Cost>;
+    /// The minimum value, below which the value function will force discard upon traversal.
+    fn min_value(&self) -> Option<Self::Value>;
 
-    /// The cost function accepting graph properties to establish the final cost.
-    fn into_cost_fn(self) -> std::sync::Arc<dyn Fn(Self::Cost, &Self::Weight, usize) -> Self::Cost + Send + Sync>;
+    /// The value function accepting graph properties to establish the final value.
+    fn into_value_fn(self) -> std::sync::Arc<dyn Fn(Self::Value, &Self::Weight, usize) -> Self::Value + Send + Sync>;
 }
 
 /// A trait specifying the graph traversal functionality.
@@ -245,7 +251,7 @@ pub trait CostFn {
 pub trait NetworkGraphTraverse {
     /// The identifier type used to reference nodes in the graph.
     type NodeId: Send + Sync;
-    /// The concrete edge observation type used by cost functions during traversal.
+    /// The concrete edge observation type used by value functions during traversal.
     type Observed: EdgeObservableRead + Send;
 
     /// Returns a list of routes from the source to the destination with the specified length
@@ -256,14 +262,14 @@ pub trait NetworkGraphTraverse {
     ///
     /// The take count argument should be set in case the graph is expected to be large enough
     /// to be traversed slowly.
-    fn simple_paths<C: CostFn<Weight = Self::Observed>>(
+    fn simple_paths<V: ValueFn<Weight = Self::Observed>>(
         &self,
         source: &Self::NodeId,
         destination: &Self::NodeId,
         length: usize,
         take_count: Option<usize>,
-        cost_fn: C,
-    ) -> Vec<(Vec<Self::NodeId>, PathId, C::Cost)>;
+        value_fn: V,
+    ) -> Vec<(Vec<Self::NodeId>, PathId, V::Value)>;
 
     /// Returns a list of routes from the source to **any** reachable node with the
     /// specified edge length.
@@ -271,13 +277,13 @@ pub trait NetworkGraphTraverse {
     /// Unlike [`simple_paths`](Self::simple_paths), this method does not target a
     /// specific destination. All graph nodes (except the source) are eligible
     /// destinations. The caller can further filter the results.
-    fn simple_paths_from<C: CostFn<Weight = Self::Observed>>(
+    fn simple_paths_from<V: ValueFn<Weight = Self::Observed>>(
         &self,
         source: &Self::NodeId,
         length: usize,
         take_count: Option<usize>,
-        cost_fn: C,
-    ) -> Vec<(Vec<Self::NodeId>, PathId, C::Cost)>;
+        value_fn: V,
+    ) -> Vec<(Vec<Self::NodeId>, PathId, V::Value)>;
 
     /// Return a list of nodes with a full loopback from myself to myself.
     ///

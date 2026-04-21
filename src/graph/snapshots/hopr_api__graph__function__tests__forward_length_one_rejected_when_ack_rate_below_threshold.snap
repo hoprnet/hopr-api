@@ -1,0 +1,15 @@
+---
+source: src/graph/function.rs
+expression: "ValueResult\n{ observations: obs, initial_value: 1.0, path_index: 0, result_value: cost }"
+---
+observations:
+  immediate:
+    connected: true
+    score: 0.95
+    ack_rate: 0.05
+  intermediate:
+    capacity: 1000
+    score: 0.95
+initial_value: 1
+path_index: 0
+result_value: -0.95
