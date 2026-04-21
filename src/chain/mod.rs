@@ -1,6 +1,6 @@
 //! On-chain operations API traits.
 //!
-//! Fine-grained traits for blockchain interaction, composed into [`HoprChainApi`]:
+//! Fine-grained traits for blockchain interaction, composed into `HoprChainApi`:
 //! - Account operations (read/write)
 //! - Channel operations (read/write)
 //! - Safe operations (read/write)

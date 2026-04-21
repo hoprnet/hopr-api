@@ -30,6 +30,7 @@ pub enum SafeSelector {
 }
 
 impl SafeSelector {
+    /// Returns `true` if the given deployed Safe matches this selector.
     pub fn satisfies(&self, safe: &DeployedSafe) -> bool {
         match self {
             SafeSelector::Owner(owner) => &safe.owner == owner,

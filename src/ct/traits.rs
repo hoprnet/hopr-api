@@ -9,7 +9,9 @@ pub use hopr_types::internal::routing::{DestinationRouting, PathId};
 /// to the relayer, starting and ending in the emitter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProbeRouting {
+    /// Probe a direct neighbor using a standard destination route.
     Neighbor(DestinationRouting),
+    /// Probe a loopback route and include the generated path identifier.
     Looping((DestinationRouting, PathId)),
 }
 
