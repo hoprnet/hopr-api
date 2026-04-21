@@ -1,0 +1,6 @@
+---
+source: src/graph/function.rs
+expression: "BidirectionalValue\n{\n    forward_without_self_loopback_value: fwd_cost, return_path_value:\n    ret_cost,\n}"
+---
+forward_without_self_loopback_value: 0.4275
+return_path_value: 0.4275

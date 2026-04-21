@@ -6,16 +6,16 @@
 //! - [`NetworkGraphTraverse`] — pathfinding (simple paths, loopbacks)
 //! - [`HoprGraphApi`] — composite of all graph traits (full read+write access)
 //! - [`HoprGraphReadApi`] — composite of view+traverse (read-only access)
-//! - [`CostFn`] — cost function trait for path selection
+//! - [`ValueFn`] — value function trait for path selection
 //! - Edge observable traits for quality measurements (QoS, latency, capacity)
 
-pub mod costs;
+pub mod function;
 pub mod traits;
 pub mod types;
 
 pub use traits::{
-    CostFn, EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeObservable, EdgeObservableRead,
-    NetworkGraphTraverse, NetworkGraphUpdate, NetworkGraphView, NetworkGraphWrite,
+    EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeObservable, EdgeObservableRead, NetworkGraphTraverse,
+    NetworkGraphUpdate, NetworkGraphView, NetworkGraphWrite, ValueFn,
 };
 pub use types::*;
 
