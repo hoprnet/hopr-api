@@ -16,10 +16,10 @@ jobs:
         with:
           disable-sudo: false
           egress-policy: audit
-      - name: Install Nix
-        uses: cachix/install-nix-action@616559265b40713947b9c190a8ff4b507b5df49b # v31
+      - name: Setup Nix
+        uses: hoprnet/hopr-workflows/actions/setup-nix@43b03a7b5df777770d95c6524f48be34184b26fa # setup-nix-v1
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -33,3 +33,11 @@ jobs:
             dependencies
             automated
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure PR and mark as ready
+        run: |
+          gh pr edit "${PR_NUMBER}" --add-assignee "@copilot"
+          gh pr edit "${PR_NUMBER}" --add-reviewer "hoprnet/hopr-development"
+          gh pr ready "${PR_NUMBER}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.update.outputs.pull-request-number }}

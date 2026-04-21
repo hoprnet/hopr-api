@@ -11,5 +11,8 @@
   "vulnerabilityAlerts": { "enabled": true },
   "semanticCommits": "enabled",
   "rangeStrategy": "bump",
-  "packageRules": [{ "matchCategories": ["rust"], "enabled": true }]
+  "packageRules": [
+    { "matchCategories": ["rust"], "enabled": true },
+    { "matchCategories": ["github-actions"], "enabled": true, "pinDigests": true }
+  ]
 }

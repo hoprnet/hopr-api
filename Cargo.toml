@@ -7,7 +7,7 @@ homepage = "https://hoprnet.org/"
 repository = "https://github.com/hoprnet/hopr-api"
 license = "GPL-3.0-only"
 edition = "2024"
-rust-version = "1.93"
+rust-version = "1.94"
 
 [lib]
 crate-type = ["rlib"]
