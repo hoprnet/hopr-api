@@ -1,0 +1,12 @@
+---
+source: src/graph/function.rs
+expression: "ValueResult\n{\n    observations: obs_no_conn, initial_value: 1.0, path_index: 1,\n    result_value: cost_not_connected\n}"
+---
+observations:
+  immediate: ~
+  intermediate:
+    capacity: 1000
+    score: 0.95
+initial_value: 1
+path_index: 1
+result_value: -1

@@ -1,0 +1,10 @@
+---
+source: src/graph/function.rs
+expression: "ValueResult\n{\n    observations: obs_e, initial_value: 1.0, path_index: 1, result_value:\n    cost_empty\n}"
+---
+observations:
+  immediate: ~
+  intermediate: ~
+initial_value: 1
+path_index: 1
+result_value: 0.5
