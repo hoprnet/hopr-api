@@ -40,9 +40,13 @@ pub trait NetworkView {
 /// form of network streams.
 #[async_trait::async_trait]
 pub trait NetworkStreamControl: std::fmt::Debug {
+    /// Starts accepting incoming streams.
+    ///
+    /// Each stream item yields the remote peer identifier and the opened stream.
     fn accept(
         self,
     ) -> Result<impl Stream<Item = (PeerId, impl AsyncRead + AsyncWrite + Send)> + Send, impl std::error::Error>;
 
+    /// Opens a new outbound stream to the given peer.
     async fn open(self, peer: PeerId) -> Result<impl AsyncRead + AsyncWrite + Send, impl std::error::Error>;
 }
