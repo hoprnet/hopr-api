@@ -2234,9 +2234,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "1.5.3"
+version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3efb3f42c72ab2b00945ba3bd581131a2679fb3f3672940828730d402d8733a3"
+checksum = "0d918bfe437f576b2395aa776e12bf678ba652fee5085a6ce77c8355f11fbbb0"
 dependencies = [
  "aes",
  "anyhow",
