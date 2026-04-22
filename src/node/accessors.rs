@@ -12,7 +12,10 @@ use std::time::Duration;
 use futures::Stream;
 use hopr_types::chain::chain_events::ChainEvent;
 
-use super::{ComponentStatus, EventWaitResult, NodeOnchainIdentity, TicketEvent, transport::TransportOperations};
+use super::{
+    ComponentStatus, ComponentStatusReporter, EventWaitResult, NodeOnchainIdentity, TicketEvent,
+    transport::TransportOperations,
+};
 use crate::{
     OffchainPublicKey,
     chain::HoprChainApi,
@@ -29,7 +32,7 @@ use crate::{
 #[auto_impl::auto_impl(&, Arc)]
 pub trait HasChainApi {
     /// The concrete chain API implementation.
-    type ChainApi: HoprChainApi + Clone + Send + Sync + 'static;
+    type ChainApi: HoprChainApi + ComponentStatusReporter + Clone + Send + Sync + 'static;
 
     /// Error type for node-level chain operations (distinct from on-chain errors).
     type ChainError: std::error::Error + Send + Sync + 'static;

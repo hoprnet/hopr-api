@@ -18,3 +18,15 @@ pub enum ComponentStatus {
     #[strum(to_string = "Unavailable: {0}")]
     Unavailable(String),
 }
+
+/// Trait for components that can report their own health status.
+///
+/// Implementors track their health internally and return the current
+/// [`ComponentStatus`] on demand. This enables the `Has*` accessor
+/// traits to delegate status queries directly to the underlying component
+/// rather than computing status from global node state.
+#[auto_impl::auto_impl(&, Arc)]
+pub trait ComponentStatusReporter {
+    /// Returns the current health status of this component.
+    fn component_status(&self) -> ComponentStatus;
+}
