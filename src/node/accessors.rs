@@ -76,7 +76,7 @@ pub trait HasNetworkView {
 // HasGraphView
 // ---------------------------------------------------------------------------
 
-/// Provides read-only access to the network graph.
+/// Provides read-only access to the network graph and its health status.
 #[auto_impl::auto_impl(&, Arc)]
 pub trait HasGraphView {
     /// The concrete graph type, constrained to read-only operations.
@@ -87,6 +87,9 @@ pub trait HasGraphView {
 
     /// Returns a reference to the network graph.
     fn graph(&self) -> &Self::Graph;
+
+    /// Reports the current health of the graph component.
+    fn status(&self) -> ComponentStatus;
 }
 
 // ---------------------------------------------------------------------------
