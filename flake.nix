@@ -160,27 +160,9 @@
             ];
           };
 
-          run-check = flake-utils.lib.mkApp {
-            drv = pkgs.writeShellScriptBin "run-check" ''
-              set -e
-              check=$1
-              if [ -z "$check" ]; then
-                nix flake show --json 2>/dev/null | \
-                  jq -r '.checks."${system}" | to_entries | .[].key' | \
-                  xargs -I '{}' nix build ".#checks."${system}".{}"
-              else
-              	nix build ".#checks."${system}".$check"
-              fi
-            '';
-          };
-          run-audit = flake-utils.lib.mkApp {
-            drv = pkgs.writeShellApplication {
-              name = "audit";
-              runtimeInputs = [ pkgs-unstable.cargo-audit ];
-              text = ''
-                cargo-audit audit
-              '';
-            };
+          run-check = nixLib.mkCheckApp { inherit system; };
+          run-audit = nixLib.mkAuditApp {
+            rustToolchainFile = ./rust-toolchain.toml;
           };
         in
         {
