@@ -10,7 +10,7 @@
 //!
 //! - `HasChainApi` — chain interaction
 //! - `HasNetworkView` — network connectivity (read-only [`NetworkView`](crate::network::NetworkView))
-//! - `HasGraphView` — network graph (read-only)
+//! - `HasGraphView` — network graph (read-only) with component health status
 //! - `HasTransportApi` — transport operations (ping, observed multiaddresses)
 //! - `HasTicketManagement` — ticket processing
 //!
