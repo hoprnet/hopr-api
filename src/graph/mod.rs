@@ -1,6 +1,7 @@
 //! Network graph API traits: topology, pathfinding, and edge quality observations.
 //!
-//! - `NetworkGraphView` — read-only node/edge queries
+//! - `NetworkGraphView` — read-only node/edge queries and graph identity
+//! - `NetworkGraphConnectivity` — topology enumeration (connected/reachable edges)
 //! - `NetworkGraphWrite` — graph mutation (add/remove nodes and edges)
 //! - `NetworkGraphUpdate` — record measurements from probes and transport
 //! - `NetworkGraphTraverse` — pathfinding (simple paths, loopbacks)
@@ -17,8 +18,8 @@ pub mod traits;
 pub mod types;
 
 pub use traits::{
-    EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeObservable, EdgeObservableRead, NetworkGraphTraverse,
-    NetworkGraphUpdate, NetworkGraphView, NetworkGraphWrite, ValueFn,
+    EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeObservable, EdgeObservableRead, NetworkGraphConnectivity,
+    NetworkGraphTraverse, NetworkGraphUpdate, NetworkGraphView, NetworkGraphWrite, ValueFn,
 };
 pub use types::*;
 

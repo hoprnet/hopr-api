@@ -39,17 +39,17 @@ use hopr_api::network::NetworkView;
 
 All modules are feature-gated:
 
-| Feature               | Module             | Description                                            |
-| --------------------- | ------------------ | ------------------------------------------------------ |
-| `chain`               | `chain`            | On-chain operation APIs (accounts, channels, tickets…) |
-| `ct`                  | `ct`               | Cover traffic and probing API traits                   |
-| `graph`               | `graph`            | Network graph topology, QoS, routing costs             |
-| `network`             | `network`          | Network state, peer observations, connectivity         |
-| `node`                | `node`             | High-level HOPR node API traits and state machine      |
-| `node-session-client` | `node::session`    | Session client for establishing HOPR sessions          |
-| `node-session-server` | `node::session`    | Session server for processing incoming sessions        |
-| `tickets`             | `tickets`          | Winning ticket management and redemption               |
-| `full`                | _all_              | Enables all of the above + `serde`                     |
+| Feature               | Module          | Description                                            |
+| --------------------- | --------------- | ------------------------------------------------------ |
+| `chain`               | `chain`         | On-chain operation APIs (accounts, channels, tickets…) |
+| `ct`                  | `ct`            | Cover traffic and probing API traits                   |
+| `graph`               | `graph`         | Network graph topology, QoS, routing costs             |
+| `network`             | `network`       | Network state, peer observations, connectivity         |
+| `node`                | `node`          | High-level HOPR node API traits and state machine      |
+| `node-session-client` | `node::session` | Session client for establishing HOPR sessions          |
+| `node-session-server` | `node::session` | Session server for processing incoming sessions        |
+| `tickets`             | `tickets`       | Winning ticket management and redemption               |
+| `full`                | _all_           | Enables all of the above + `serde`                     |
 
 ## Usage
 
