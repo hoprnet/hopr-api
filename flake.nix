@@ -36,7 +36,6 @@
       flake-utils,
       flake-parts,
       rust-overlay,
-      crane,
       nix-lib,
       pre-commit,
       ...
@@ -60,9 +59,6 @@
           ];
           pkgs = import nixpkgs { inherit localSystem overlays; };
           pkgs-unstable = import nixpkgs-unstable { inherit localSystem overlays; };
-
-          # Platform information
-          buildPlatform = pkgs.stdenv.buildPlatform;
 
           # Import nix-lib for shared Nix utilities
           nixLib = nix-lib.lib.${system};
@@ -164,30 +160,9 @@
             ];
           };
 
-          run-check = flake-utils.lib.mkApp {
-            drv = pkgs.writeShellScriptBin "run-check" ''
-              set -e
-              check=$1
-              if [ -z "$check" ]; then
-                nix flake show --json 2>/dev/null | \
-                  jq -r '.checks."${system}" | to_entries | .[].key' | \
-                  xargs -I '{}' nix build ".#checks."${system}".{}"
-              else
-              	nix build ".#checks."${system}".$check"
-              fi
-            '';
-          };
-          run-audit = flake-utils.lib.mkApp {
-            drv = pkgs.writeShellApplication {
-              name = "audit";
-              runtimeInputs = [
-                pkgs.cargo
-                pkgs-unstable.cargo-audit
-              ];
-              text = ''
-                cargo audit
-              '';
-            };
+          run-check = nixLib.mkCheckApp { inherit system; };
+          run-audit = nixLib.mkAuditApp {
+            rustToolchainFile = ./rust-toolchain.toml;
           };
         in
         {
