@@ -36,7 +36,6 @@
       flake-utils,
       flake-parts,
       rust-overlay,
-      crane,
       nix-lib,
       pre-commit,
       ...
@@ -60,9 +59,6 @@
           ];
           pkgs = import nixpkgs { inherit localSystem overlays; };
           pkgs-unstable = import nixpkgs-unstable { inherit localSystem overlays; };
-
-          # Platform information
-          buildPlatform = pkgs.stdenv.buildPlatform;
 
           # Import nix-lib for shared Nix utilities
           nixLib = nix-lib.lib.${system};
@@ -180,12 +176,9 @@
           run-audit = flake-utils.lib.mkApp {
             drv = pkgs.writeShellApplication {
               name = "audit";
-              runtimeInputs = [
-                pkgs.cargo
-                pkgs-unstable.cargo-audit
-              ];
+              runtimeInputs = [ pkgs-unstable.cargo-audit ];
               text = ''
-                cargo audit
+                cargo-audit audit
               '';
             };
           };
