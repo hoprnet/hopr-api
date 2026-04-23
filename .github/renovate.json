@@ -13,6 +13,10 @@
   "rangeStrategy": "bump",
   "packageRules": [
     { "matchCategories": ["rust"], "enabled": true },
-    { "matchCategories": ["github-actions"], "enabled": true, "pinDigests": true }
+    {
+      "matchCategories": ["github-actions"],
+      "enabled": true,
+      "pinDigests": true
+    }
   ]
 }

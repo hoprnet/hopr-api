@@ -19,7 +19,7 @@ use super::{
 use crate::{
     OffchainPublicKey,
     chain::HoprChainApi,
-    graph::{NetworkGraphTraverse, NetworkGraphView},
+    graph::{NetworkGraphConnectivity, NetworkGraphTraverse, NetworkGraphView},
     network::NetworkView,
     tickets::TicketManagement,
 };
@@ -84,6 +84,7 @@ pub trait HasNetworkView {
 pub trait HasGraphView {
     /// The concrete graph type, constrained to read-only operations.
     type Graph: NetworkGraphView<NodeId = OffchainPublicKey>
+        + NetworkGraphConnectivity<NodeId = OffchainPublicKey>
         + NetworkGraphTraverse<NodeId = OffchainPublicKey>
         + Send
         + Sync;

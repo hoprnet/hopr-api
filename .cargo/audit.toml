@@ -3,6 +3,7 @@ ignore = [
   "RUSTSEC-2024-0436", # 'paste' dependency in 'alloy' [unmaintained]
   "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained],
   "RUSTSEC-2026-0097", #  needs `alloy` to be updated
+  "RUSTSEC-2026-0105", # 'core2' via 'multihash' [unmaintained], waiting on multiaddr update
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"

@@ -165,6 +165,9 @@ pub trait NetworkGraphView {
     /// Returns the weight represented by the observations for the edge between the
     /// given source and destination, if available.
     fn edge(&self, src: &Self::NodeId, dest: &Self::NodeId) -> Option<Self::Observed>;
+
+    /// Returns the self-identity node of this graph.
+    fn identity(&self) -> &Self::NodeId;
 }
 
 /// A trait for mutating the graph topology.
@@ -292,4 +295,30 @@ pub trait NetworkGraphTraverse {
     ///
     /// At least length 2 is required to provide a path through a single relay.
     fn simple_loopback_to_self(&self, length: usize, take_count: Option<usize>) -> Vec<(Vec<Self::NodeId>, PathId)>;
+}
+
+/// Topology enumeration — which edges exist and which are reachable.
+///
+/// Unlike [`NetworkGraphTraverse`] (path planning), this trait answers
+/// "what is connected to what" without computing routes.
+#[auto_impl::auto_impl(&, Box, Arc)]
+pub trait NetworkGraphConnectivity {
+    /// The identifier type used to reference nodes in the graph.
+    type NodeId: Send + Sync;
+    /// The concrete edge observation type.
+    type Observed: EdgeObservableRead + Send;
+
+    /// Returns all edges in the graph as `(source, destination, observations)` triples.
+    ///
+    /// Only nodes that participate in at least one edge appear in the result.
+    /// Isolated nodes (no incoming or outgoing edges) are omitted.
+    fn connected_edges(&self) -> Vec<(Self::NodeId, Self::NodeId, Self::Observed)>;
+
+    /// Returns edges reachable from the graph's
+    /// [`identity`](NetworkGraphView::identity) node via directed traversal.
+    ///
+    /// Only edges where both the source and destination are reachable are
+    /// included. Disconnected subgraphs that cannot be routed through are
+    /// excluded.
+    fn reachable_edges(&self) -> Vec<(Self::NodeId, Self::NodeId, Self::Observed)>;
 }
