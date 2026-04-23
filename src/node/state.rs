@@ -48,4 +48,12 @@ pub enum HoprState {
     /// Node has been shut down
     #[strum(to_string = "Node has been terminated")]
     Terminated = 10,
+
+    /// One or more components are degraded but the node is still operational
+    #[strum(to_string = "Node is running in degraded state")]
+    Degraded = 11,
+
+    /// One or more components are unavailable, node cannot function properly
+    #[strum(to_string = "Node has failed")]
+    Failed = 12,
 }
