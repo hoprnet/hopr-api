@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "1.8.1"
+version = "1.9.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"

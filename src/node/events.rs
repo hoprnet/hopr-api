@@ -2,6 +2,11 @@
 //!
 //! Strategies use [`ActionableEventSource::subscribe_to_actionable_events`] to obtain
 //! a unified stream of every event that may trigger an automated node action.
+//!
+//! ## Event filtering
+//!
+//! Pass `Some(&[ActionableEventDiscriminant::Ticket])` to avoid activating source
+//! streams your strategy does not need. `None` subscribes to all sources.
 use futures::stream::BoxStream;
 
 use crate::{
@@ -18,7 +23,12 @@ use crate::{
 /// and all peers, not only those involving the local node. A strategy that
 /// only cares about its own channels can filter with `channel.direction(&me)`
 /// locally.
-#[derive(Debug, Clone)]
+///
+/// Use [`ActionableEventDiscriminant`] (derived via `strum::EnumDiscriminants`) to
+/// declare which event sources a strategy needs when calling
+/// [`ActionableEventSource::subscribe_to_actionable_events`].
+#[derive(Debug, Clone, strum::EnumDiscriminants, strum::EnumTryAs)]
+#[strum_discriminants(name(ActionableEventDiscriminant), derive(Hash))]
 pub enum ActionableEvent {
     /// An on-chain event from the indexer.
     ///
@@ -47,10 +57,20 @@ pub enum ActionableEvent {
 /// stream backed by its own broadcast receiver, so multiple concurrent
 /// strategies each receive every event without interfering with each other.
 ///
+/// ## Filtering
+///
+/// Pass `Some` discriminants to skip sources the strategy does not need.
+/// Unneeded sources are never activated and consume no resources.
+/// Pass `None` to subscribe to all sources (default for backward compatibility).
+///
 /// [`subscribe_to_actionable_events`]: ActionableEventSource::subscribe_to_actionable_events
 #[auto_impl::auto_impl(&, Arc)]
 pub trait ActionableEventSource {
-    /// Subscribe to the unified stream of actionable events.
+    /// Subscribe to a merged stream of actionable events.
+    ///
+    /// `filter` limits which source streams are activated:
+    /// - `None` → all sources (chain, network, ticket)
+    /// - `Some(discriminants)` → only the listed sources
     ///
     /// Returns a boxed, `'static` stream that yields [`ActionableEvent`]s until
     /// the node shuts down. It should terminate only when a node terminates.
@@ -59,5 +79,8 @@ pub trait ActionableEventSource {
     ///
     /// Returns an error if the underlying broadcast channel is closed or the
     /// subscription cannot otherwise be established.
-    fn subscribe_to_actionable_events(&self) -> Result<BoxStream<'static, ActionableEvent>, String>;
+    fn subscribe_to_actionable_events(
+        &self,
+        filter: Option<&[ActionableEventDiscriminant]>,
+    ) -> Result<BoxStream<'static, ActionableEvent>, String>;
 }
