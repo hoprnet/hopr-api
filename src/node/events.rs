@@ -2,7 +2,6 @@
 //!
 //! Strategies use [`ActionableEventSource::subscribe_to_actionable_events`] to obtain
 //! a unified stream of every event that may trigger an automated node action.
-
 use futures::stream::BoxStream;
 
 use crate::{
@@ -23,19 +22,18 @@ use crate::{
 pub enum ActionableEvent {
     /// An on-chain event from the indexer.
     ///
-    /// Covers all ten [`ChainEvent`] variants: announcements, channel lifecycle,
-    /// balance changes, ticket redemptions, and protocol parameter updates.
+    /// Covers all [`ChainEvent`] variants.
     Chain(ChainEvent),
 
     /// A network-layer connectivity event.
     ///
-    /// Emitted when a libp2p peer connects or disconnects.
+    /// Emitted when a network level observations relevant
+    /// for outside operations happens.
     Network(NetworkEvent),
 
     /// A ticket pipeline event.
     ///
-    /// Includes both [`TicketEvent::WinningTicket`] and [`TicketEvent::RejectedTicket`].
-    /// Strategies that compute win or rejection rates require both variants.
+    /// Includes the actual ticket.
     Ticket(TicketEvent),
 }
 
@@ -55,7 +53,7 @@ pub trait ActionableEventSource {
     /// Subscribe to the unified stream of actionable events.
     ///
     /// Returns a boxed, `'static` stream that yields [`ActionableEvent`]s until
-    /// the node shuts down.
+    /// the node shuts down. It should terminate only when a node terminates.
     ///
     /// # Errors
     ///
