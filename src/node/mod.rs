@@ -19,6 +19,7 @@
 //! - `IncentiveRedeemOperations` — ticket redemption and statistics (relay nodes only)
 
 mod accessors;
+mod events;
 mod incentive;
 #[cfg(any(feature = "node-session-client", feature = "node-session-server"))]
 /// Session APIs for outgoing/incoming HOPR sessions.
@@ -29,6 +30,7 @@ mod transport;
 mod types;
 
 pub use accessors::*;
+pub use events::*;
 pub use incentive::*;
 #[cfg(feature = "node-session-client")]
 pub use session::client::*;
