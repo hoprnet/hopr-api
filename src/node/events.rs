@@ -9,11 +9,7 @@
 //! streams your strategy does not need. `None` subscribes to all sources.
 use futures::stream::BoxStream;
 
-use crate::{
-    chain::ChainEvent,
-    network::NetworkEvent,
-    node::TicketEvent,
-};
+use crate::{chain::ChainEvent, network::NetworkEvent, node::TicketEvent};
 
 /// Unified event type for strategy consumption.
 ///
