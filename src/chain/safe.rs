@@ -12,32 +12,37 @@ use crate::chain::ChainReceipt;
 pub struct DeployedSafe {
     /// Safe address.
     pub address: Address,
-    /// Address of the Safe owner (typically the node chain key).
-    pub owner: Address,
+    /// Addresses of the Safe owners.
+    pub owners: Vec<Address>,
     /// Address of the Safe module.
     pub module: Address,
     /// Addresses of nodes that have been registered with this Safe.
     pub registered_nodes: Vec<Address>,
+    /// Address of the Safe deployer.
+    pub deployer: Address,
 }
 
 /// Selector for [deployed Safes](DeployedSafe).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SafeSelector {
-    /// Selects Safes owned by the given address.
-    Owner(Address),
     /// Selects Safes with the given address.
     Address(Address),
+    /// Selects Safes deployed by the given address.
+    Deployer(Address),
     /// Selects Safes linked to the given node address
     NodeAddress(Address),
+    /// Selects Safes owned by the given address.
+    Owner(Address),
 }
 
 impl SafeSelector {
     /// Returns `true` if the given deployed Safe matches this selector.
     pub fn satisfies(&self, safe: &DeployedSafe) -> bool {
         match self {
-            SafeSelector::Owner(owner) => &safe.owner == owner,
             SafeSelector::Address(address) => &safe.address == address,
+            SafeSelector::Deployer(deployer) => &safe.deployer == deployer, 
             SafeSelector::NodeAddress(node_address) => safe.registered_nodes.contains(node_address),
+            SafeSelector::Owner(owner) => safe.owners.contains(owner),
         }
     }
 }
