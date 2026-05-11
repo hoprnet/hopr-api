@@ -17,43 +17,24 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build-library:
-    name: Library ${{ matrix.architecture }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - architecture: x86_64-linux
-            runner: self-hosted-hoprnet-bigger
-            build_command: nix build -L .#lib-hopr-api-x86_64-linux
-    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@build-library-v1
+    name: Build Library
+    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@build-library-v2
     permissions:
       contents: read
     with:
       source_branch: ${{ github.ref_name }}
-      architecture: ${{ matrix.architecture }}
-      build_command: ${{ matrix.build_command }}
-      runner: ${{ matrix.runner }}
-    secrets:
-      cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-  publish:
-    name: Publish
-    needs: [build-library]
-    uses: hoprnet/hopr-workflows/.github/workflows/publish-crates.yaml@e4fadaa70234b9d734d5c51b6900602e55492ce2 # workflow-publish-crates-v3
-    permissions:
-      contents: read
-    with:
-      source_branch: ${{ github.ref_name }}
-      package: hopr-api
       version_type: release
-      runner: self-hosted-hoprnet-bigger
+      architecture: x86_64-linux
+      package_name: hopr-api
+      runner: depot-ubuntu-24.04-4
     secrets:
       cachix_auth_token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       cargo_registry_token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
   release:
     name: Close release
     needs:
-      - publish
-    runs-on: self-hosted-hoprnet-small
+      - build-library
+    runs-on: depot-ubuntu-24.04
     permissions:
       contents: write
     steps:
