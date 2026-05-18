@@ -77,7 +77,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "1.5.4", features = [
+hopr-types = { version = "1.8.0", features = [
   "crypto",
   "internal",
   "primitive",
@@ -89,7 +89,7 @@ anyhow = "1.0.102"
 insta = { version = "1.47.2", features = ["json", "yaml", "redactions"] }
 mockall = "0.14.0"
 serde = { version = "1.0.228", features = ["derive"] }
-tokio = { version = "1.52.1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
 
 [workspace]
 
