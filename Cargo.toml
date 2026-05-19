@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "1.9.1"
+version = "1.10.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -27,6 +27,7 @@ full = [
   "types-chain",
   "types-random",
   "types-fixed-rng",
+  "types-telemetry",
 ]
 chain = ["dep:auto_impl", "types-chain", "dep:auto_impl"]
 ct = []
@@ -48,6 +49,8 @@ types-random = ["hopr-types/random"]
 types-fixed-rng = ["hopr-types/fixed-rng"]
 types-chain = ["hopr-types/chain"]
 types-internal = ["hopr-types/internal"]
+types-telemetry = ["hopr-types/telemetry"]
+types-keypair = ["hopr-types/keypair"]
 types-with-bindings = ["types-chain", "hopr-types/use-bindings"]
 
 [dependencies]
@@ -77,7 +80,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "1.5.4", features = [
+hopr-types = { version = "1.8.2", features = [
   "crypto",
   "internal",
   "primitive",
