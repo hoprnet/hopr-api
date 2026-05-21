@@ -72,7 +72,7 @@ pub trait ActionableEventSource {
     /// Subscribe to a merged stream of actionable events.
     ///
     /// `filter` limits which source streams are activated:
-    /// - `None` → all sources (chain, network, ticket)
+    /// - `None` → all sources (chain, network, ticket, PIX)
     /// - `Some(discriminants)` → only the listed sources
     ///
     /// Returns a boxed, `'static` stream that yields [`ActionableEvent`]s until

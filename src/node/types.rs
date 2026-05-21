@@ -117,7 +117,7 @@ pub enum PixEvent {
     NewDepositAddress(PixAddressId, Address),
     /// The Exit node received a new deposit address.
     ///
-    /// The [`DepositCompleted`] is optionally used to give future feedback that a sufficient deposit to the address has
+    /// The [`DepositUpdated`] is optionally used to give future feedback that a sufficient deposit to the address has
     /// been received.
     ///
     /// Generated on the Exit node only.
