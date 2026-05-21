@@ -40,7 +40,7 @@ impl SafeSelector {
     pub fn satisfies(&self, safe: &DeployedSafe) -> bool {
         match self {
             SafeSelector::Address(address) => &safe.address == address,
-            SafeSelector::Deployer(deployer) => &safe.deployer == deployer, 
+            SafeSelector::Deployer(deployer) => &safe.deployer == deployer,
             SafeSelector::NodeAddress(node_address) => safe.registered_nodes.contains(node_address),
             SafeSelector::Owner(owner) => safe.owners.contains(owner),
         }

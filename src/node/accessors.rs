@@ -13,7 +13,7 @@ use futures::Stream;
 use hopr_types::chain::chain_events::ChainEvent;
 
 use super::{
-    ComponentStatus, ComponentStatusReporter, EventWaitResult, NodeOnchainIdentity, TicketEvent,
+    ComponentStatus, ComponentStatusReporter, EventWaitResult, NodeOnchainIdentity, PixEvent, TicketEvent,
     transport::TransportOperations,
 };
 use crate::{
@@ -132,5 +132,16 @@ pub trait HasTicketManagement {
     fn subscribe_ticket_events(&self) -> impl Stream<Item = TicketEvent> + Send + 'static;
 
     /// Reports the current health of the ticket management component.
+    fn status(&self) -> ComponentStatus;
+}
+
+/// Provides access to the Exit incentivization component (PIX implementation).
+///
+/// Available on all nodes.
+#[auto_impl::auto_impl(&, Arc)]
+pub trait HasExitIncentivization {
+    /// Returns a stream of [`PixEvent`]s from the transport layer.
+    fn subscribe_pix_events(&self) -> impl Stream<Item = PixEvent> + Send + 'static;
+    /// Reports the current health of the Exit incentivization component.
     fn status(&self) -> ComponentStatus;
 }
