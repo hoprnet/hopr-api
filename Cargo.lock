@@ -1911,6 +1911,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
+name = "flagset"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "float-cmp"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2263,13 +2272,14 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.11.0"
+version = "1.12.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "atomic_enum",
  "auto_impl",
  "chrono",
+ "flagset",
  "futures",
  "futures-concurrency",
  "hopr-types",
@@ -2278,6 +2288,8 @@ dependencies = [
  "mockall",
  "multiaddr",
  "serde",
+ "serde_repr",
+ "smart-default",
  "strum 0.28.0",
  "thiserror",
  "tokio",
@@ -4039,6 +4051,17 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_repr"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175ee3e80ae9982737ca543e96133087cbd9a485eecc3bc4de9c1a37b47ea59c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
