@@ -233,6 +233,7 @@ pub trait TicketFactory {
 }
 
 #[cfg(test)]
+#[allow(clippy::result_large_err, clippy::type_complexity)]
 mod tests {
     use futures::{StreamExt, TryStreamExt, stream};
     use hopr_types::{crypto::prelude::Keypair, internal::prelude::*, primitive::prelude::Address};
@@ -329,7 +330,7 @@ mod tests {
                     .index(index as u64)
                     .channel_epoch(channel.channel_epoch)
                     .eth_challenge(Default::default())
-                    .build_signed(&issuer, &Default::default())
+                    .build_signed(issuer, &Default::default())
                     .unwrap()
             })
             .collect()
@@ -360,8 +361,8 @@ mod tests {
             .status(ChannelStatus::Open)
             .build()?;
 
-        let channel_1_clone = channel_1.clone();
-        let channel_2_clone = channel_2.clone();
+        let channel_1_copy = channel_1;
+        let channel_2_copy = channel_2;
         let channel_1_id = *channel_1.get_id();
         let channel_2_id = *channel_2.get_id();
 
@@ -370,7 +371,7 @@ mod tests {
             .with(function(move |selector: &ChannelSelector| {
                 selector.destination == Some(my_address)
             }))
-            .returning(move |_| Ok(stream::iter(vec![channel_1_clone.clone(), channel_2_clone.clone()]).boxed()));
+            .returning(move |_| Ok(stream::iter(vec![channel_1_copy, channel_2_copy]).boxed()));
 
         mock_client.expect_clone().returning(MockChainClient::default);
 
