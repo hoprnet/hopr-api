@@ -54,7 +54,7 @@ jobs:
           disable-sudo: true
           egress-policy: audit
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
       - uses: actions/labeler@77a4082b841706ac431479b7e2bb11216ffef250 # main on 20.02.2025
@@ -105,7 +105,7 @@ jobs:
           - architecture: aarch64-darwin
             runner: depot-macos-15
             required_label: binary:aarch64-darwin
-    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@64cb8ba34ff2e8caa43e366207d0cb1faa8d43d4 # build-library-v2
+    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@6895dbbc515e39e0e283a68a80b8628ca6ead37a # build-library-v2
     permissions:
       contents: read
     with:
