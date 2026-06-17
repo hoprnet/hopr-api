@@ -139,6 +139,16 @@
                 language = "system";
                 pass_filenames = true;
               };
+              actionlint.enable = true;
+              pinact = {
+                enable = true;
+                name = "pinact";
+                description = "Check GitHub Action refs are SHA-pinned and resolvable";
+                entry = "${pkgs.pinact}/bin/pinact run --check";
+                files = "\\.ya?ml$";
+                language = "system";
+                pass_filenames = false;
+              };
             };
           };
 
@@ -156,6 +166,7 @@
             ];
             shellHook = ''
               ${pre-commit-check.shellHook}
+              export GITHUB_TOKEN="$(gh auth token 2>/dev/null || true)"
             '';
           };
 
