@@ -2263,7 +2263,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.12.1"
+version = "1.12.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2304,9 +2304,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "1.9.0"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7c80eeed436e90282f16d00dd1af6b73d72a58f66016c04a9fcc3de0328e063"
+checksum = "1d621ab243808540504b0a1e215743d45283e3133e7a4be44d2dd4cb31587a87"
 dependencies = [
  "aes",
  "anyhow",
@@ -2687,9 +2687,9 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.47.2"
+version = "1.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b4a6248eb93a4401ed2f37dfe8ea592d3cf05b7cf4f8efa867b6895af7e094e"
+checksum = "86f0f8fee8c926415c58d6ae43a08523a26faccb2323f5e6b644fe7dd4ef6b82"
 dependencies = [
  "console",
  "once_cell",
