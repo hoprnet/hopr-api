@@ -2265,7 +2265,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.12.1"
+version = "1.12.2"
 dependencies = [
  "anyhow",
  "async-trait",
