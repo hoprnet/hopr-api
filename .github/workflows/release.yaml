@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build-library:
     name: Build Library
-    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@d0cffaf9e9209c8eca00e8c74e82ac3f5f3cf7bb # build-library-v3
+    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@fa71078959cf9f892185e8df16551720693a2cd1 # build-library OIDC trusted publishing (hoprnet/hopr-workflows#84)
     permissions:
       contents: read
       id-token: write
