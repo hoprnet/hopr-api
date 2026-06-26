@@ -80,8 +80,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-# TODO: set to 1.9.3
-hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "lukas/reexport-typenum", features = [
+hopr-types = { version = "1.9.3", features = [
   "crypto",
   "internal",
   "primitive",
@@ -89,7 +88,7 @@ hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "lukas/re
 ] }
 
 [dev-dependencies]
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 insta = { version = "1.48.0", features = ["json", "yaml", "redactions"] }
 mockall = "0.14.0"
 serde = { version = "1.0.228", features = ["derive"] }
