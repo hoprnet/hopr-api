@@ -722,9 +722,9 @@ checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "aquamarine"
@@ -2265,7 +2265,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.12.2"
+version = "1.13.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2306,9 +2306,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "1.9.2"
+version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8d8aded1217dfdbc949ae4651ad2de266588f8700ecaf6394e1430a5f38cffb"
+checksum = "c842b389c9b2b84349733cb67712ae0699f6a6b756670e742206cd7ac447acd2"
 dependencies = [
  "aes",
  "anyhow",
