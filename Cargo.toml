@@ -80,7 +80,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "1.9.3", git = "https://github.com/hoprnet/hopr-types", branch = "lukas/reexport-typenum", features = [
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "lukas/reexport-typenum", features = [
   "crypto",
   "internal",
   "primitive",
