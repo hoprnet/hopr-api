@@ -2503,7 +2503,7 @@ dependencies = [
 [[package]]
 name = "hopr-types"
 version = "1.10.0"
-source = "git+https://github.com/hoprnet/hopr-types#c5f03d2d2a05ef5b2eb343b24dcc143f0199425d"
+source = "git+https://github.com/hoprnet/hopr-types?branch=main#c5f03d2d2a05ef5b2eb343b24dcc143f0199425d"
 dependencies = [
  "aes",
  "anyhow",
