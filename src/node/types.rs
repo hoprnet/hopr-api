@@ -4,9 +4,9 @@ use std::{future::Future, num::NonZeroU32};
 
 use hopr_types::{
     chain::chain_events::ChainEvent,
-    crypto::utils::SecretValue,
+    crypto::{types::BjjPublicKey, utils::SecretValue},
     internal::prelude::{HoprPseudonym, RedeemableTicket, Ticket},
-    primitive::{balance::HoprBalance, prelude::Address},
+    primitive::{balance::HoprBalance, prelude::Address, traits::BytesRepresentable},
 };
 
 use super::CompoundResult;
@@ -106,9 +106,44 @@ pub type PixAddressId = (HoprPseudonym, NonZeroU32);
 pub type DepositUpdated = futures::channel::mpsc::Sender<(PixAddressId, HoprBalance)>;
 
 /// An address representing a PIX deposit.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PixDepositAddress(pub [u8; 32]);
+
+impl From<Address> for PixDepositAddress {
+    fn from(value: Address) -> Self {
+        const { debug_assert!(Address::SIZE <= 32) };
+        let mut ret = PixDepositAddress::default();
+        ret.0[0..Address::SIZE].copy_from_slice(value.as_ref());
+        ret
+    }
+}
+
+impl From<PixDepositAddress> for Address {
+    fn from(value: PixDepositAddress) -> Self {
+        const { debug_assert!(Address::SIZE <= 32) };
+        let mut ret = [0u8; Address::SIZE];
+        ret.copy_from_slice(&value.0[0..Address::SIZE]);
+        ret.into()
+    }
+}
+
+impl From<BjjPublicKey> for PixDepositAddress {
+    fn from(value: BjjPublicKey) -> Self {
+        const { debug_assert!(BjjPublicKey::SIZE == 32) };
+        let mut ret = PixDepositAddress::default();
+        ret.0[0..BjjPublicKey::SIZE].copy_from_slice(value.as_ref());
+        ret
+    }
+}
+
+impl TryFrom<PixDepositAddress> for BjjPublicKey {
+    type Error = hopr_types::primitive::errors::GeneralError;
+
+    fn try_from(value: PixDepositAddress) -> Result<Self, Self::Error> {
+        value.0.as_ref().try_into()
+    }
+}
 
 /// A secret corresponding to a PIX deposit address.
 ///
@@ -192,6 +227,11 @@ pub enum TicketEvent {
 mod tests {
     use std::collections::HashSet;
 
+    use hopr_types::crypto::{
+        keypairs::Keypair,
+        prelude::{BjjKeypair, ChainKeypair},
+    };
+
     use super::*;
 
     #[test]
@@ -254,5 +294,18 @@ mod tests {
         cloned.multiaddresses.push("/ip4/5.6.7.8/tcp/9092".parse().unwrap());
         assert_eq!(peer.multiaddresses.len(), 1);
         assert_eq!(cloned.multiaddresses.len(), 2);
+    }
+
+    #[test]
+    fn deposit_addresses_interop() -> anyhow::Result<()> {
+        let (_, pk) = BjjKeypair::random().unzip();
+        let addr = PixDepositAddress::from(pk);
+        assert_eq!(pk, addr.try_into()?);
+
+        let (_, pk) = ChainKeypair::random().unzip();
+        let addr = PixDepositAddress::from(pk.to_address());
+        assert_eq!(pk.to_address(), addr.into());
+
+        Ok(())
     }
 }
