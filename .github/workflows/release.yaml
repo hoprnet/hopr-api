@@ -40,7 +40,7 @@ jobs:
       id-token: write
     steps:
       - name: Release version
-        uses: hoprnet/hopr-workflows/actions/release-version@9c452ef512e6a7d5119125af9fc1aa45591a632f # 0.10.2
+        uses: hoprnet/hopr-workflows/actions/release-version@5b0f0e6c7e3a02e30a33b9f5150fb5b118676e58 # 0.11.0
         with:
           source_branch: ${{ github.ref_name }}
           release_type: ${{ inputs.release_type }}
