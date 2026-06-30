@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "1.13.1"
+version = "1.14.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -90,7 +90,7 @@ hopr-types = { version = "1.9.3", features = [
 [dev-dependencies]
 anyhow = "1.0.103"
 insta = { version = "1.48.0", features = ["json", "yaml", "redactions"] }
-mockall = "0.14.0"
+mockall = "0.15.0"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread"] }
 
