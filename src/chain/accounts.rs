@@ -1,6 +1,6 @@
 use futures::{future::BoxFuture, stream::BoxStream};
 use hopr_types::{
-    crypto::prelude::{OffchainKeypair, OffchainPublicKey},
+    crypto::prelude::{ChainKeypair, OffchainKeypair, OffchainPublicKey},
     primitive::prelude::Address,
 };
 pub use hopr_types::{
@@ -65,6 +65,14 @@ pub trait ChainWriteAccountOperations {
     /// Withdraws native or token currency from the Safe or node account (depends on the used `PayloadGenerator`).
     async fn withdraw<C: Currency + Send>(
         &self,
+        balance: Balance<C>,
+        recipient: &Address,
+    ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>;
+
+    /// Withdraws native or token currency from the `signer` to `recipient` in a single transaction.
+    async fn withdraw_from_signer<C: Currency + Send>(
+        &self,
+        signer: &ChainKeypair,
         balance: Balance<C>,
         recipient: &Address,
     ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>;
