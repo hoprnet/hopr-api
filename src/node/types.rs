@@ -108,31 +108,40 @@ pub type DepositUpdated = futures::channel::mpsc::Sender<(PixAddressId, HoprBala
 /// An address representing a PIX deposit.
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PixDepositAddress(pub [u8; 32]);
+pub struct PixDepositAddress(u8, pub [u8; 32]);
+
+const ADDRESS_TYPE_ETH: u8 = 0x01;
+const ADDRESS_TYPE_BJJ: u8 = 0x02;
 
 impl From<Address> for PixDepositAddress {
     fn from(value: Address) -> Self {
-        const { debug_assert!(Address::SIZE <= 32) };
+        const { assert!(Address::SIZE <= 32) };
         let mut ret = PixDepositAddress::default();
-        ret.0[0..Address::SIZE].copy_from_slice(value.as_ref());
+        ret.0 = ADDRESS_TYPE_ETH;
+        ret.1[0..Address::SIZE].copy_from_slice(value.as_ref());
         ret
     }
 }
 
-impl From<PixDepositAddress> for Address {
-    fn from(value: PixDepositAddress) -> Self {
-        const { debug_assert!(Address::SIZE <= 32) };
+impl TryFrom<PixDepositAddress> for Address {
+    type Error = hopr_types::primitive::errors::GeneralError;
+
+    fn try_from(value: PixDepositAddress) -> Result<Self, Self::Error> {
+        if value.0 != ADDRESS_TYPE_ETH {
+            return Err(hopr_types::primitive::errors::GeneralError::InvalidInput);
+        }
         let mut ret = [0u8; Address::SIZE];
-        ret.copy_from_slice(&value.0[0..Address::SIZE]);
-        ret.into()
+        ret.copy_from_slice(&value.1[0..Address::SIZE]);
+        Ok(ret.into())
     }
 }
 
 impl From<BjjPublicKey> for PixDepositAddress {
     fn from(value: BjjPublicKey) -> Self {
-        const { debug_assert!(BjjPublicKey::SIZE == 32) };
+        const { assert!(BjjPublicKey::SIZE == 32) };
         let mut ret = PixDepositAddress::default();
-        ret.0[0..BjjPublicKey::SIZE].copy_from_slice(value.as_ref());
+        ret.0 = ADDRESS_TYPE_BJJ;
+        ret.1[0..BjjPublicKey::SIZE].copy_from_slice(value.as_ref());
         ret
     }
 }
@@ -141,7 +150,10 @@ impl TryFrom<PixDepositAddress> for BjjPublicKey {
     type Error = hopr_types::primitive::errors::GeneralError;
 
     fn try_from(value: PixDepositAddress) -> Result<Self, Self::Error> {
-        value.0.as_ref().try_into()
+        if value.0 != ADDRESS_TYPE_BJJ {
+            return Err(hopr_types::primitive::errors::GeneralError::InvalidInput);
+        }
+        value.1.as_ref().try_into()
     }
 }
 
@@ -230,6 +242,7 @@ mod tests {
     use hopr_types::crypto::{
         keypairs::Keypair,
         prelude::{BjjKeypair, ChainKeypair},
+        types::PublicKey,
     };
 
     use super::*;
@@ -298,13 +311,16 @@ mod tests {
 
     #[test]
     fn deposit_addresses_interop() -> anyhow::Result<()> {
-        let (_, pk) = BjjKeypair::random().unzip();
-        let addr = PixDepositAddress::from(pk);
-        assert_eq!(pk, addr.try_into()?);
+        let (_, pk1) = BjjKeypair::random().unzip();
+        let addr1 = PixDepositAddress::from(pk1);
+        assert_eq!(pk1, addr1.try_into()?);
 
-        let (_, pk) = ChainKeypair::random().unzip();
-        let addr = PixDepositAddress::from(pk.to_address());
-        assert_eq!(pk.to_address(), addr.into());
+        let (_, pk2) = ChainKeypair::random().unzip();
+        let addr2 = PixDepositAddress::from(pk2.to_address());
+        assert_eq!(pk2.to_address(), addr2.try_into()?);
+
+        assert!(BjjPublicKey::try_from(addr2).is_err());
+        assert!(Address::try_from(addr1).is_err());
 
         Ok(())
     }
