@@ -4,9 +4,9 @@ use std::{future::Future, num::NonZeroU32};
 
 use hopr_types::{
     chain::chain_events::ChainEvent,
-    crypto::utils::SecretValue,
+    crypto::{types::BjjPublicKey, utils::SecretValue},
     internal::prelude::{HoprPseudonym, RedeemableTicket, Ticket},
-    primitive::{balance::HoprBalance, prelude::Address},
+    primitive::{balance::HoprBalance, prelude::Address, traits::BytesRepresentable},
 };
 
 use super::CompoundResult;
@@ -106,9 +106,65 @@ pub type PixAddressId = (HoprPseudonym, NonZeroU32);
 pub type DepositUpdated = futures::channel::mpsc::Sender<(PixAddressId, HoprBalance)>;
 
 /// An address representing a PIX deposit.
-#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PixDepositAddress(pub [u8; 32]);
+pub struct PixDepositAddress(u8, [u8; 32]);
+
+const ADDRESS_TYPE_ETH: u8 = 0x01;
+const ADDRESS_TYPE_BJJ: u8 = 0x02;
+
+impl AsRef<[u8]> for PixDepositAddress {
+    fn as_ref(&self) -> &[u8] {
+        &self.1
+    }
+}
+
+impl From<Address> for PixDepositAddress {
+    fn from(value: Address) -> Self {
+        const { assert!(Address::SIZE <= 32) };
+        let mut ret = PixDepositAddress::default();
+        ret.0 = ADDRESS_TYPE_ETH;
+        ret.1[0..Address::SIZE].copy_from_slice(value.as_ref());
+        ret
+    }
+}
+
+impl TryFrom<PixDepositAddress> for Address {
+    type Error = hopr_types::primitive::errors::GeneralError;
+
+    fn try_from(value: PixDepositAddress) -> Result<Self, Self::Error> {
+        if value.0 != ADDRESS_TYPE_ETH {
+            return Err(hopr_types::primitive::errors::GeneralError::InvalidInput);
+        }
+        if value.1[Address::SIZE..].iter().any(|&b| b != 0) {
+            return Err(hopr_types::primitive::errors::GeneralError::InvalidInput);
+        }
+        let mut ret = [0u8; Address::SIZE];
+        ret.copy_from_slice(&value.1[0..Address::SIZE]);
+        Ok(ret.into())
+    }
+}
+
+impl From<BjjPublicKey> for PixDepositAddress {
+    fn from(value: BjjPublicKey) -> Self {
+        const { assert!(BjjPublicKey::SIZE == 32) };
+        let mut ret = PixDepositAddress::default();
+        ret.0 = ADDRESS_TYPE_BJJ;
+        ret.1[0..BjjPublicKey::SIZE].copy_from_slice(value.as_ref());
+        ret
+    }
+}
+
+impl TryFrom<PixDepositAddress> for BjjPublicKey {
+    type Error = hopr_types::primitive::errors::GeneralError;
+
+    fn try_from(value: PixDepositAddress) -> Result<Self, Self::Error> {
+        if value.0 != ADDRESS_TYPE_BJJ {
+            return Err(hopr_types::primitive::errors::GeneralError::InvalidInput);
+        }
+        value.1.as_ref().try_into()
+    }
+}
 
 /// A secret corresponding to a PIX deposit address.
 ///
@@ -192,6 +248,12 @@ pub enum TicketEvent {
 mod tests {
     use std::collections::HashSet;
 
+    use hopr_types::crypto::{
+        keypairs::Keypair,
+        prelude::{BjjKeypair, ChainKeypair},
+        types::PublicKey,
+    };
+
     use super::*;
 
     #[test]
@@ -254,5 +316,33 @@ mod tests {
         cloned.multiaddresses.push("/ip4/5.6.7.8/tcp/9092".parse().unwrap());
         assert_eq!(peer.multiaddresses.len(), 1);
         assert_eq!(cloned.multiaddresses.len(), 2);
+    }
+
+    #[test]
+    fn deposit_addresses_interop() -> anyhow::Result<()> {
+        let (_, pk1) = BjjKeypair::random().unzip();
+        let addr1 = PixDepositAddress::from(pk1);
+        assert_eq!(pk1, addr1.try_into()?);
+
+        let (_, pk2) = ChainKeypair::random().unzip();
+        let addr2 = PixDepositAddress::from(pk2.to_address());
+        assert_eq!(pk2.to_address(), addr2.try_into()?);
+
+        assert!(BjjPublicKey::try_from(addr2).is_err());
+        assert!(Address::try_from(addr1).is_err());
+
+        let default_addr = PixDepositAddress::default();
+        assert!(Address::try_from(default_addr).is_err());
+        assert!(BjjPublicKey::try_from(default_addr).is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn address_from_pix_deposit_address_should_reject_non_zero_trailing_bytes() {
+        let (_, pk) = ChainKeypair::random().unzip();
+        let mut addr = PixDepositAddress::from(pk.to_address());
+        addr.1[Address::SIZE..].copy_from_slice(&[0xff; 32 - Address::SIZE]);
+        assert!(Address::try_from(addr).is_err());
     }
 }
