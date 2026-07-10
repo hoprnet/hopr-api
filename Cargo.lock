@@ -2643,7 +2643,8 @@ dependencies = [
 [[package]]
 name = "hopr-types"
 version = "2.0.0"
-source = "git+https://github.com/hoprnet/hopr-types?branch=lukas%2Fhybrid-array#00b2c59f8db766ee33d65f269de17439867e78b1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e24293a5ce7289056c4e01b8d91beebc8663cdcca8ffbc24d847f3f22af4f274"
 dependencies = [
  "aes",
  "anyhow",
