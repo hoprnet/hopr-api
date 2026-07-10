@@ -345,4 +345,11 @@ mod tests {
         addr.1[Address::SIZE..].copy_from_slice(&[0xff; 32 - Address::SIZE]);
         assert!(Address::try_from(addr).is_err());
     }
+
+    #[test]
+    fn default_pix_address_fails_all_conversions() {
+        let addr = PixDepositAddress::default();
+        assert!(Address::try_from(addr).is_err());
+        assert!(BjjPublicKey::try_from(addr).is_err());
+    }
 }
