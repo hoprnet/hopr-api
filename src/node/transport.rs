@@ -8,6 +8,36 @@ use std::time::Duration;
 
 use crate::{Multiaddr, OffchainPublicKey, graph::traits::EdgeObservable};
 
+/// Protocol specification for the HOPR packet transport layer.
+///
+/// Implementors expose the fixed protocol parameters that are determined by the
+/// SPHINX packet format and are constant for a given HOPR network deployment.
+pub trait PacketTransport {
+    /// Maximum usable payload bytes for a single HOPR packet.
+    ///
+    /// Derived from the SPHINX envelope size minus protocol overhead bytes.
+    /// The authoritative value lives in `hopr-crypto-packet` as `HoprPacket::PAYLOAD_SIZE`.
+    fn packet_payload_size() -> usize;
+}
+
+impl<T: PacketTransport> PacketTransport for &T {
+    fn packet_payload_size() -> usize {
+        T::packet_payload_size()
+    }
+}
+
+impl<T: PacketTransport> PacketTransport for Box<T> {
+    fn packet_payload_size() -> usize {
+        T::packet_payload_size()
+    }
+}
+
+impl<T: PacketTransport> PacketTransport for std::sync::Arc<T> {
+    fn packet_payload_size() -> usize {
+        T::packet_payload_size()
+    }
+}
+
 /// Minimal transport operations that require the full transport stack.
 ///
 /// Peer observations and quality queries should use `HasGraphView` instead.
