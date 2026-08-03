@@ -1,9 +1,9 @@
-use futures::{StreamExt, stream::FuturesUnordered, future::BoxFuture};
+use futures::{StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use hopr_types::primitive::prelude::{Address, HoprBalance};
 
 use crate::node::{PixDepositAddress, PixDepositSecret};
 
-/// Contains abstraction over the deposit pool for PIX.
+/// Contains abstraction over the deposit pool from PIX.
 ///
 /// The implementations can be completely non-anonymous (e.g. plain Ethereum transactions from
 /// node's Safe to the [`PixDepositAddress`], if the `PixDepositAddress` and [`PixDepositSecret`] represents
@@ -14,6 +14,9 @@ use crate::node::{PixDepositAddress, PixDepositSecret};
 ///
 /// The operations MUST fail if used with `PixDepositAddress`/`PixDepositSecret` which are internally
 /// not compatible with the underlying pool's deposit address representation.
+///
+/// The implementations should take care of all the retry/reliabililty of the operations, so the
+/// caller can assume that the operations will do best effort to succeed.
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait DepositPool {
@@ -23,32 +26,48 @@ pub trait DepositPool {
     type Receipt: Send + Sync + 'static;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
-    async fn deposit_funds_to(&self, dst: PixDepositAddress, amount: HoprBalance) -> Result<Self::Receipt, Self::Error>;
+    async fn deposit_funds_to(&self, dst: PixDepositAddress, amount: HoprBalance)
+    -> Result<Self::Receipt, Self::Error>;
 
     /// Returns a future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`].
-    fn notify_deposit(&self, dst: PixDepositAddress, min_amount: HoprBalance) -> Result<BoxFuture<'_, (PixDepositAddress, HoprBalance)>, Self::Error>;
+    ///
+    /// The returned future is `'static` so it can be spawned independently of the borrow on `&self`.
+    fn notify_deposit(
+        &self,
+        dst: PixDepositAddress,
+        min_amount: HoprBalance,
+    ) -> Result<BoxFuture<'static, (PixDepositAddress, HoprBalance)>, Self::Error>;
 
     /// Performs withdrawal of a previously made deposit using its [`PixDepositSecret`] to the
     /// `dst` Ethereum address.
     ///
     /// Should allow for partial withdrawals if `amount` is specified,
     /// otherwise withdraws the entire deposit.
-    async fn withdraw_deposit(&self, key: &PixDepositSecret, dst: Address, amount: Option<HoprBalance>) -> Result<Self::Receipt, Self::Error>;
+    async fn withdraw_deposit(
+        &self,
+        key: &PixDepositSecret,
+        dst: Address,
+        amount: Option<HoprBalance>,
+    ) -> Result<Self::Receipt, Self::Error>;
 
     /// Performs batch [full withdrawal](Self::withdraw_deposit) of multiple deposits into a single Ethereum address.
     ///
     /// This default implementation simply concurrently calls [`self.withdraw_deposit`].
     /// Implementors may choose a more efficient pool-native batching.
-    async fn withdraw_multiple_deposits(&self, keys: &[PixDepositSecret], dst: Address) -> Result<Vec<Result<Self::Receipt, Self::Error>>, Self::Error>
-    where Self: Clone + Send + Sync
+    async fn withdraw_multiple_deposits(
+        &self,
+        keys: &[PixDepositSecret],
+        dst: Address,
+    ) -> Result<Vec<Result<Self::Receipt, Self::Error>>, Self::Error>
+    where
+        Self: Clone + Send + Sync,
     {
-        let futures = keys.to_vec()
-            .into_iter()
+        let futures = keys
+            .iter()
+            .cloned()
             .map(|key| {
                 let this = self.clone();
-                async move {
-                    this.withdraw_deposit(&key, dst, None).await
-                }
+                async move { this.withdraw_deposit(&key, dst, None).await }
             })
             .collect::<FuturesUnordered<_>>();
 

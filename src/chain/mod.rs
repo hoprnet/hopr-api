@@ -10,12 +10,12 @@
 
 mod accounts;
 mod channels;
+mod deposit_pool;
 mod events;
 mod keys;
 mod safe;
 mod tickets;
 mod values;
-mod deposit_pool;
 
 pub use accounts::*;
 pub use channels::*;
