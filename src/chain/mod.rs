@@ -10,6 +10,7 @@
 
 mod accounts;
 mod channels;
+mod deposit_pool;
 mod events;
 mod keys;
 mod safe;
@@ -18,6 +19,7 @@ mod values;
 
 pub use accounts::*;
 pub use channels::*;
+pub use deposit_pool::*;
 pub use events::*;
 pub use keys::*;
 pub use safe::*;
