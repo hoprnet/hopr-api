@@ -1,15 +1,15 @@
-use futures::{StreamExt, future::BoxFuture, stream::FuturesUnordered};
+use futures::future::{BoxFuture, join_all};
 use hopr_types::primitive::prelude::{Address, HoprBalance};
 
 use crate::node::{PixDepositAddress, PixDepositSecret};
 
 /// Contains abstraction over the deposit pool from PIX.
 ///
-/// The implementations can be completely non-anonymous (e.g. plain Ethereum transactions from
-/// node's Safe to the [`PixDepositAddress`], if the `PixDepositAddress` and [`PixDepositSecret`] represents
+/// The implementations can be completely non-anonymous (e.g., plain Ethereum transactions from
+/// node's Safe to the [`PixDepositAddress`], if the `PixDepositAddress` and [`PixDepositSecret`] represent
 /// standard Ethereum keypair), or anonymous using a privacy pool in the background.
 ///
-/// In general, any anonymous privacy pool must be able to implement this trait in order
+/// In general, any anonymous privacy pool must be able to implement this trait
 /// to be used with PIX.
 ///
 /// The operations MUST fail if used with `PixDepositAddress`/`PixDepositSecret` which are internally
@@ -58,19 +58,15 @@ pub trait DepositPool {
         &self,
         keys: &[PixDepositSecret],
         dst: Address,
-    ) -> Result<Vec<Result<Self::Receipt, Self::Error>>, Self::Error>
+    ) -> Result<Vec<Result<(Address, Self::Receipt), Self::Error>>, Self::Error>
     where
-        Self: Clone + Send + Sync,
+        Self: Sync,
     {
-        let futures = keys
-            .iter()
-            .cloned()
-            .map(|key| {
-                let this = self.clone();
-                async move { this.withdraw_deposit(&key, dst, None).await }
-            })
-            .collect::<FuturesUnordered<_>>();
-
-        Ok(futures.collect().await)
+        let futures = keys.iter().map(|key| async move {
+            self.withdraw_deposit(key, dst, None)
+                .await
+                .map(|receipt| (dst, receipt))
+        });
+        Ok(join_all(futures).await)
     }
 }
