@@ -15,9 +15,11 @@ mod keys;
 mod safe;
 mod tickets;
 mod values;
+mod deposit_pool;
 
 pub use accounts::*;
 pub use channels::*;
+pub use deposit_pool::*;
 pub use events::*;
 pub use keys::*;
 pub use safe::*;
