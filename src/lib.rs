@@ -23,7 +23,9 @@ pub mod tickets;
 pub use hopr_types as types;
 pub use hopr_types::{
     crypto::prelude::{ChainKeypair, OffchainKeypair, OffchainPublicKey},
-    primitive::prelude::{Address, HoprBalance, WxHOPR, XDai, XDaiBalance},
+    primitive::{
+        multiaddr::Multiaddr,
+        prelude::{Address, HoprBalance, WxHOPR, XDai, XDaiBalance},
+    },
 };
 pub use libp2p_identity::PeerId;
-pub use multiaddr::Multiaddr;

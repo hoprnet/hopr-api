@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "1.17.1"
+version = "1.18.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -71,7 +71,6 @@ libp2p-identity = { version = "0.2.14", features = [
   "ed25519",
   "rand",
 ] }
-multiaddr = "0.18.2"
 serde = { version = "1.0.228", features = ["derive"], optional = true }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
@@ -80,7 +79,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "2.0.0", features = [
+hopr-types = { version = "2.1.0", features = [
   "crypto",
   "internal",
   "primitive",
