@@ -5,9 +5,11 @@ use hopr_types::{
 };
 pub use hopr_types::{
     internal::prelude::AccountEntry,
-    primitive::prelude::{Balance, Currency},
+    primitive::{
+        multiaddr::Multiaddr,
+        prelude::{Balance, Currency},
+    },
 };
-pub use multiaddr::Multiaddr;
 
 use crate::chain::ChainReceipt;
 

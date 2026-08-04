@@ -1,7 +1,6 @@
 use futures::future::{BoxFuture, join_all};
+pub use hopr_types::crypto::primitives::{PixDepositAddress, PixDepositSecret};
 use hopr_types::primitive::prelude::{Address, HoprBalance};
-
-use crate::node::{PixDepositAddress, PixDepositSecret};
 
 /// Contains abstraction over the deposit pool from PIX.
 ///
