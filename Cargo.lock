@@ -2622,7 +2622,7 @@ dependencies = [
  "futures-concurrency",
  "hopr-types",
  "insta",
- "libp2p-identity 0.2.14",
+ "libp2p-identity",
  "mockall",
  "serde",
  "strum",
@@ -2651,9 +2651,9 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "2.1.0"
+version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "652a46df18c311d0e853035079180078b9a073686b4b78d081a8b656c0b2c85c"
+checksum = "c4e0acce20fb83668e05ddfb277dca2b1b1408fd3df4e4859a8104c160afa050"
 dependencies = [
  "aes",
  "anyhow",
@@ -2679,7 +2679,7 @@ dependencies = [
  "hybrid-array",
  "k256 0.14.0",
  "lazy_static",
- "libp2p-identity 0.3.0",
+ "libp2p-identity",
  "multiaddr",
  "num_enum",
  "opentelemetry",
@@ -3186,26 +3186,8 @@ dependencies = [
  "multihash",
  "prost",
  "rand 0.8.7",
- "sha2 0.10.9",
- "thiserror",
- "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "libp2p-identity"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d77f16caa4f4d2667a1fad5bb1a3a4a4556967c1bff93525ebb2975847fa3de"
-dependencies = [
- "bs58",
- "ed25519-dalek 3.0.0",
- "hkdf 0.13.0",
- "multihash",
- "prost",
- "rand 0.10.2",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.10.9",
  "thiserror",
  "tracing",
  "zeroize",
@@ -3314,15 +3296,14 @@ dependencies = [
 
 [[package]]
 name = "multiaddr"
-version = "0.19.0"
+version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d96879ec0057cf5f99543c5333f6818c1473081684ae7ad55da21b6ea65ba214"
+checksum = "fe6351f60b488e04c1d21bc69e56b89cb3f5e8f5d22557d6e8031bdfd79b6961"
 dependencies = [
  "arrayref",
  "byteorder",
- "bytes",
  "data-encoding",
- "libp2p-identity 0.3.0",
+ "libp2p-identity",
  "multibase",
  "multihash",
  "percent-encoding",
