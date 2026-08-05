@@ -33,7 +33,7 @@ pub trait DepositPool {
     /// This default implementation simply concurrently calls [`self.deposit_funds_to`].
     /// Implementors may choose a more efficient pool-native batching.
     ///
-    /// The method is allowed to return less receipts than deposits.
+    /// The method is allowed to return fewer receipts than deposits.
     async fn deposit_funds_to_multiple(
         &self,
         deposits: Vec<(PixDepositAddress, HoprBalance)>,
