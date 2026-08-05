@@ -2611,7 +2611,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "1.18.2"
+version = "1.19.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2651,9 +2651,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4e0acce20fb83668e05ddfb277dca2b1b1408fd3df4e4859a8104c160afa050"
+version = "2.2.0"
+source = "git+https://github.com/hoprnet/hopr-types?branch=kauki%2Ffeat%2Ftypes%2Fnetwork-types-and-session-types#a8053a1e6234a022013f139b5d090738cc9a4416"
 dependencies = [
  "aes",
  "anyhow",
