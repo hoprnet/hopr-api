@@ -2,6 +2,23 @@
 //!
 //! Gated behind the `node-session-server` feature.
 
+use hopr_types::network::{SessionId, SessionTarget};
+
+/// An incoming HOPR session to be processed by a [`HoprSessionServer`].
+///
+/// Generic over the concrete session byte-stream `S` (supplied by the implementor,
+/// typically hopr-lib), keeping transport-level types out of this crate. Only the
+/// plain [`SessionId`] and [`SessionTarget`] descriptors are named here.
+#[derive(Debug)]
+pub struct IncomingSession<S> {
+    /// Identifier of the incoming session.
+    pub id: SessionId,
+    /// The session byte-stream carrying the forwarded data.
+    pub session: S,
+    /// Describes where data received over the session should be forwarded.
+    pub target: SessionTarget,
+}
+
 /// Trait for processing incoming HOPR sessions on exit nodes.
 ///
 /// The concrete session type is defined by the implementor (typically hopr-lib),

@@ -21,7 +21,6 @@ settings.local.json
 
 # direnv
 .direnv/
-.envrc
 
 # Python (if any tooling)
 __pycache__/
