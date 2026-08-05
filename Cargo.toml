@@ -108,8 +108,3 @@ codegen-units = 1
 # make insta snapshots faster
 [profile.dev.package]
 insta.opt-level = 3
-
-# TEMPORARY (multi-repo chain bootstrap): hopr-types 2.2.0 is not yet on crates.io.
-# Remove once 2.2.0 is published.
-[patch.crates-io]
-hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "kauki/feat/types/network-types-and-session-types" }
