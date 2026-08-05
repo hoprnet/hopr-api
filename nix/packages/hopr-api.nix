@@ -38,33 +38,50 @@ let
       rev
       cargoToml
       ;
+    cargoExtraArgs = "--all-features";
   };
 
-  buildLib =
-    builder: args:
-    builder.callPackage nixLib.mkRustLibrary (
-      {
-        inherit
-          src
-          depsSrc
-          cargoToml
-          rev
-          ;
-      }
-      // args
-    );
+  buildLib = builder: args: builder.callPackage nixLib.mkRustLibrary (buildArgs // args);
+
+  clippyDerivation = buildLib builders.local { runClippy = true; };
+
+  # Reuse Clippy's dev-profile dependency artifacts for the standalone
+  # `cargo check` validation.
+  checkDerivation = clippyDerivation.overrideAttrs (_: {
+    pname = "hopr-api-check";
+    buildPhase = ''
+      runHook preBuild
+      cargo check --all-features
+      runHook postBuild
+    '';
+    installPhase = ''
+      mkdir -p "$out"
+    '';
+  });
 in
 {
 
-  clippy = buildLib builders.local { runClippy = true; };
+  check = checkDerivation;
+
+  clippy = clippyDerivation;
 
   unit-test = buildLib builders.local {
     src = testSrc;
     runTests = true;
-    cargoExtraArgs = "--all-features";
   };
 
-  docs = buildLib builders.localNightly { buildDocs = true; };
+  docs = builders.localNightly.callPackage nixLib.mkRustPackage (buildArgs // { buildDocs = true; });
+
+  coverage = builders.localCoverage.callPackage nixLib.mkRustPackage {
+    src = testSrc;
+    inherit
+      depsSrc
+      cargoToml
+      rev
+      ;
+    runCoverage = true;
+    cargoExtraArgs = "--all-features --lib";
+  };
 
   # Cross-compiled rlib packages
   # Artifacts are available at: ./result/lib/libhopr_api.rlib

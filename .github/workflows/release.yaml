@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build-library:
     name: Build Library
-    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@fa71078959cf9f892185e8df16551720693a2cd1 # build-library OIDC trusted publishing (hoprnet/hopr-workflows#84)
+    uses: hoprnet/hopr-workflows/.github/workflows/build-library.yaml@3d291616a704bea189af1f16cefc25e26d2857c0 # build-library-v3.2.0
     permissions:
       contents: read
       id-token: write
@@ -26,6 +26,7 @@ jobs:
       source_branch: ${{ github.ref_name }}
       version_type: release
       architecture: x86_64-linux
+      build_command: "nix build -L .#lib-hopr-api-x86_64-linux"
       package_name: hopr-api
       runner: depot-ubuntu-24.04-4
     secrets:
