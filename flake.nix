@@ -10,7 +10,7 @@
     crane.url = "github:ipetkov/crane/v0.23.4";
 
     # HOPR Nix Library (provides flake-utils and reusable build functions)
-    nix-lib.url = "github:hoprnet/nix-lib/v1.1.0";
+    nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
     flake-root.url = "github:srid/flake-root";
@@ -179,8 +179,20 @@
               cargo-insta
             ];
             shellHook = ''
+              # Runner-provided Nix binaries must not load libraries from this
+              # shell's newer glibc closure.
+              _hopr_ld_library_path="''${LD_LIBRARY_PATH-}"
+              unset LD_LIBRARY_PATH
+
               export GITHUB_TOKEN="''${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"
               ${pre-commit-check.shellHook}
+
+              if [ -n "$_hopr_ld_library_path" ]; then
+                export LD_LIBRARY_PATH="$_hopr_ld_library_path"
+              else
+                unset LD_LIBRARY_PATH
+              fi
+              unset _hopr_ld_library_path
             '';
           };
 
@@ -253,7 +265,9 @@
             };
           };
 
-          checks = { inherit (hoprApiPackages) clippy; };
+          checks = {
+            inherit (hoprApiPackages) check clippy;
+          };
 
           apps = {
             check = run-check;
