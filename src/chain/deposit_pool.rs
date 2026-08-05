@@ -28,6 +28,22 @@ pub trait DepositPool {
     async fn deposit_funds_to(&self, dst: PixDepositAddress, amount: HoprBalance)
     -> Result<Self::Receipt, Self::Error>;
 
+    /// Performs batch deposit of funds from node's Safe to multiple deposit addresses.
+    ///
+    /// This default implementation simply concurrently calls [`self.deposit_funds_to`].
+    /// Implementors may choose a more efficient pool-native batching.
+    ///
+    /// The method is allowed to return less receipts than deposits.
+    async fn deposit_funds_to_multiple(
+        &self,
+        deposits: Vec<(PixDepositAddress, HoprBalance)>,
+    ) -> Result<Vec<Self::Receipt>, Self::Error> {
+        let futures = deposits
+            .into_iter()
+            .map(|(dst, amount)| async move { self.deposit_funds_to(dst, amount).await });
+        join_all(futures).await.into_iter().collect()
+    }
+
     /// Returns a future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`].
     ///
     /// The returned future is `'static` so it can be spawned independently of the borrow on `&self`.
