@@ -5,6 +5,7 @@ ignore = [
   "RUSTSEC-2026-0097", #  needs `alloy` to be updated
   "RUSTSEC-2026-0105", # 'core2' via 'multihash' [unmaintained], waiting on multiaddr update
   "RUSTSEC-2026-0173", # 'proc-macro-error2' via 'aquamarine' in 'hopr-types' [unmaintained], waiting on upstream update
+  "RUSTSEC-2026-0249", # `smartstring` unmaintained, requires `opentelemetry-prometheus-text-exporter` > 0.3.0
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"
