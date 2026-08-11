@@ -8,7 +8,7 @@ observations:
     score: 0.95
     ack_rate: 0.9
   intermediate:
-    capacity: 1000
+    balance: "1000"
     score: 0.95
 initial_value: 2
 path_index: 2

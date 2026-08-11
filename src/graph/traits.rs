@@ -8,8 +8,20 @@ use crate::graph::{MeasurableEdge, MeasurableNode};
 /// Contains the measured latency on success, or a unit error on failure.
 pub type EdgeTransportMeasurement = std::result::Result<std::time::Duration, ()>;
 
-/// The capacity of a payment channel representing an average amount of messages remaining in the channel.
-pub type Capacity = u128;
+/// Payment channel balance, in the chain's base currency units.
+///
+/// Deliberately *not* a ticket or message count. Such a count divides by the ticket face value,
+/// which is a network-wide parameter derived from a live ticket price and winning probability. It
+/// is uniform across channels but changes over time, so folding it into the stored value would
+/// stale every edge in the graph at once on each change, or force a full re-derivation. A balance
+/// changes only when the chain says so.
+///
+/// Producers recompute the face value whenever the ticket price or winning probability changes and
+/// push it into the graph; consumers read it back and supply it at decision time, or omit it to
+/// accept the neutral default. See [`EdgeValueFn`](super::function::EdgeValueFn).
+///
+/// `Some(0)` is an OPEN channel with nothing left to spend, distinct from `None` for unknown.
+pub type ChannelBalance = hopr_types::primitive::primitives::U256;
 
 /// Represents the different kinds of observations that can be recorded for a graph edge.
 #[derive(Debug)]
@@ -18,8 +30,8 @@ pub enum EdgeWeightType {
     Immediate(EdgeTransportMeasurement),
     /// A transport measurement relayed through an intermediate peer.
     Intermediate(EdgeTransportMeasurement),
-    /// An update to the payment channel capacity along this edge.
-    Capacity(Option<Capacity>),
+    /// An update to the payment channel balance along this edge.
+    Balance(Option<ChannelBalance>),
     /// An update to the physical connectivity status of this edge.
     Connected(bool),
     /// An update to the immediate hop protocol conformance metrics (messages sent / acks received).
@@ -65,8 +77,10 @@ pub trait EdgeNetworkObservableRead {
 
 /// Trait for reading HOPR protocol-level properties of an edge.
 pub trait EdgeProtocolObservable {
-    /// Capacity present in the channel to send through this path segment using PoR of HOPR protocol.
-    fn capacity(&self) -> Option<u128>;
+    /// Remaining balance of the channel backing this path segment, in base currency units.
+    ///
+    /// See [`ChannelBalance`] for why this is not pre-divided into a ticket count.
+    fn balance(&self) -> Option<ChannelBalance>;
 }
 
 /// Trait for reading immediate hop protocol conformance metrics.
@@ -99,10 +113,13 @@ pub trait EdgeObservableRead {
     /// Transport level measurements performed in a transparent mode using looping measurements.
     fn intermediate_qos(&self) -> Option<&Self::IntermediateMeasurement>;
 
-    /// A value scoring the observed peer.
+    /// Score in `[0.0, 1.0]`; higher is better. `None` when neither stream has observations.
     ///
-    /// It is from the [0.0, 1.0] range. The higher the value, the better the score.
-    fn score(&self) -> f64;
+    /// Per RFC-0014 §4.2 the streams combine as `(imm + inter) / 2` only when both are present,
+    /// else the single present one. "Present" means *has observations*, not *allocated* — a
+    /// capacity or connectivity update creates a stream without recording a probe, and averaging
+    /// against that empty stream halves every edge only one stream can observe.
+    fn score(&self) -> Option<f64>;
 }
 
 /// Combined trait for full read/write access to edge observations.
@@ -126,10 +143,19 @@ pub trait EdgeLinkObservable {
     /// It is from the range [0.0, 1.0]. The higher the value, the better the score.
     fn average_probe_rate(&self) -> f64;
 
-    /// A value scoring the observed peer.
+    /// Whether any probe outcome, successful or failed, has been recorded.
     ///
-    /// It is from the range [0.0, 1.0]. The higher the value, the better the score.
-    fn score(&self) -> f64;
+    /// Cannot be inferred from the averages: an all-failed stream holds exactly `0.0`, which is
+    /// also the initial value.
+    fn has_observations(&self) -> bool;
+
+    /// Score in `[0.0, 1.0]`; higher is better.
+    ///
+    /// `None` = no observations, `Some(0.0)` = measured and unusable. Cost functions need the
+    /// distinction: unobserved edges get `edge_penalty` to stay discoverable, measured-dead ones
+    /// are starved. Collapsing both to `0.0` ranks a never-working relay above a partly-working
+    /// one.
+    fn score(&self) -> Option<f64>;
 }
 
 /// Lifecycle events observed for a node in the network.
@@ -162,6 +188,17 @@ pub trait NetworkGraphView {
     type Observed: EdgeObservable + Send;
     /// The identifier type used to reference nodes in the graph.
     type NodeId: Send;
+
+    /// The current face value of a single-hop ticket, in base currency units.
+    ///
+    /// Network-wide and identical for every channel, but time-varying: producers recompute it from
+    /// the ticket price and winning probability whenever either changes and push it in via
+    /// [`NetworkGraphUpdate::set_ticket_face_value`]. It lives here rather than on each edge so a
+    /// price change costs one write instead of staling the whole graph.
+    ///
+    /// `None` when no value has been pushed yet, in which case path selection falls back to
+    /// [`default_ticket_face_value`](super::function::default_ticket_face_value).
+    fn ticket_face_value(&self) -> Option<ChannelBalance>;
 
     /// Returns the number of nodes in the graph.
     fn node_count(&self) -> usize;
@@ -241,6 +278,13 @@ pub trait NetworkGraphWrite {
 /// A trait for recording observed measurement updates to graph edges and nodes.
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait NetworkGraphUpdate {
+    /// Records a newly computed single-hop ticket face value.
+    ///
+    /// Call whenever the ticket price or winning probability changes. Cheap by construction: no
+    /// edge stores the face value, so none has to be revisited — which is why edges carry a raw
+    /// balance instead of a pre-divided ticket count.
+    fn set_ticket_face_value(&self, ticket_face_value: ChannelBalance);
+
     /// Records an edge measurement derived from network telemetry.
     fn record_edge<N, P>(&self, update: MeasurableEdge<N, P>)
     where

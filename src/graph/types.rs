@@ -40,13 +40,12 @@ pub trait MeasurablePath {
 
 /// Update for the edge between src and dest.
 ///
-/// The capacity can be either `None` or a `Some(u128)` value.
-/// * `None` - the capacity of the channel disappeared
-/// * `Some(u128)` - the capacity was updated
+/// * `None` - the channel is gone, so its balance is no longer known
+/// * `Some(balance)` - the balance was updated
 #[derive(Debug, Copy, Clone)]
-pub struct EdgeCapacityUpdate {
-    /// Updated channel capacity; `None` means capacity is no longer known.
-    pub capacity: Option<u128>,
+pub struct EdgeBalanceUpdate {
+    /// Updated channel balance in base currency units; `None` when no longer known.
+    pub balance: Option<crate::graph::traits::ChannelBalance>,
     /// Source node of the edge.
     pub src: OffchainPublicKey,
     /// Destination node of the edge.
@@ -99,8 +98,8 @@ where
     Probe(std::result::Result<EdgeTransportTelemetry<N, P>, NetworkGraphError<P>>),
     /// Outcome of a SURB round-trip, reported by the node that minted it.
     Surb(SurbTelemetry),
-    /// Capacity update for a specific directed edge.
-    Capacity(Box<EdgeCapacityUpdate>),
+    /// Balance update for a specific directed edge.
+    Balance(Box<EdgeBalanceUpdate>),
     /// Connection-state change observed for a peer.
     ConnectionStatus {
         /// Peer whose connection state changed.
