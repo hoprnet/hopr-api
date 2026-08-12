@@ -45,7 +45,7 @@ pub trait MeasurablePath {
 #[derive(Debug, Copy, Clone)]
 pub struct EdgeBalanceUpdate {
     /// Updated channel balance in base currency units; `None` when no longer known.
-    pub balance: Option<crate::graph::traits::ChannelBalance>,
+    pub balance: Option<crate::graph::traits::Balance>,
     /// Source node of the edge.
     pub src: OffchainPublicKey,
     /// Destination node of the edge.

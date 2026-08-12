@@ -91,6 +91,7 @@ hopr-types = { version = "2.3.0", features = [
 anyhow = "1.0.104"
 insta = { version = "1.48.0", features = ["json", "yaml", "redactions"] }
 mockall = "0.15.0"
+rstest = "0.26.1"
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 

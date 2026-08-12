@@ -10,18 +10,12 @@ pub type EdgeTransportMeasurement = std::result::Result<std::time::Duration, ()>
 
 /// Payment channel balance, in the chain's base currency units.
 ///
-/// Deliberately *not* a ticket or message count. Such a count divides by the ticket face value,
-/// which is a network-wide parameter derived from a live ticket price and winning probability. It
-/// is uniform across channels but changes over time, so folding it into the stored value would
-/// stale every edge in the graph at once on each change, or force a full re-derivation. A balance
-/// changes only when the chain says so.
+/// Not a ticket count: that divides by the network-wide ticket face value, which changes over time
+/// and would stale every edge at once. Producers push the face value separately; consumers supply
+/// it at decision time. See [`EdgeValueFn`](super::function::EdgeValueFn).
 ///
-/// Producers recompute the face value whenever the ticket price or winning probability changes and
-/// push it into the graph; consumers read it back and supply it at decision time, or omit it to
-/// accept the neutral default. See [`EdgeValueFn`](super::function::EdgeValueFn).
-///
-/// `Some(0)` is an OPEN channel with nothing left to spend, distinct from `None` for unknown.
-pub type ChannelBalance = hopr_types::primitive::primitives::U256;
+/// `Some(0)` is an OPEN channel with nothing left to spend; `None` is unknown.
+pub type Balance = hopr_types::primitive::primitives::U256;
 
 /// Represents the different kinds of observations that can be recorded for a graph edge.
 #[derive(Debug)]
@@ -31,7 +25,7 @@ pub enum EdgeWeightType {
     /// A transport measurement relayed through an intermediate peer.
     Intermediate(EdgeTransportMeasurement),
     /// An update to the payment channel balance along this edge.
-    Balance(Option<ChannelBalance>),
+    Balance(Option<Balance>),
     /// An update to the physical connectivity status of this edge.
     Connected(bool),
     /// An update to the immediate hop protocol conformance metrics (messages sent / acks received).
@@ -79,8 +73,8 @@ pub trait EdgeNetworkObservableRead {
 pub trait EdgeProtocolObservable {
     /// Remaining balance of the channel backing this path segment, in base currency units.
     ///
-    /// See [`ChannelBalance`] for why this is not pre-divided into a ticket count.
-    fn balance(&self) -> Option<ChannelBalance>;
+    /// See [`Balance`] for why this is not pre-divided into a ticket count.
+    fn balance(&self) -> Option<Balance>;
 }
 
 /// Trait for reading immediate hop protocol conformance metrics.
@@ -146,7 +140,8 @@ pub trait EdgeLinkObservable {
     /// Whether any probe outcome, successful or failed, has been recorded.
     ///
     /// Cannot be inferred from the averages: an all-failed stream holds exactly `0.0`, which is
-    /// also the initial value.
+    /// also the initial value. Implementations must keep this in agreement with
+    /// [`score`](Self::score): `has_observations() == score().is_some()`.
     fn has_observations(&self) -> bool;
 
     /// Score in `[0.0, 1.0]`; higher is better.
@@ -198,7 +193,7 @@ pub trait NetworkGraphView {
     ///
     /// `None` when no value has been pushed yet, in which case path selection falls back to
     /// [`default_ticket_face_value`](super::function::default_ticket_face_value).
-    fn ticket_face_value(&self) -> Option<ChannelBalance>;
+    fn ticket_face_value(&self) -> Option<Balance>;
 
     /// Returns the number of nodes in the graph.
     fn node_count(&self) -> usize;
@@ -283,7 +278,7 @@ pub trait NetworkGraphUpdate {
     /// Call whenever the ticket price or winning probability changes. Cheap by construction: no
     /// edge stores the face value, so none has to be revisited — which is why edges carry a raw
     /// balance instead of a pre-divided ticket count.
-    fn set_ticket_face_value(&self, ticket_face_value: ChannelBalance);
+    fn set_ticket_face_value(&self, ticket_face_value: Balance);
 
     /// Records an edge measurement derived from network telemetry.
     fn record_edge<N, P>(&self, update: MeasurableEdge<N, P>)
