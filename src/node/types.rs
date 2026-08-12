@@ -181,12 +181,6 @@ pub enum TicketEvent {
 mod tests {
     use std::collections::HashSet;
 
-    use hopr_types::crypto::{
-        keypairs::Keypair,
-        prelude::{BjjKeypair, ChainKeypair},
-        types::PublicKey,
-    };
-
     use super::*;
 
     #[test]
