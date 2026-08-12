@@ -2,12 +2,13 @@ use futures::future::{BoxFuture, join_all};
 pub use hopr_types::crypto::primitives::{PixDepositAddress, PixDepositSecret};
 use hopr_types::{
     crypto::prelude::Keypair,
+    network::PixAddressId,
     primitive::prelude::{Address, HoprBalance},
 };
 
 /// A future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`]
 /// or an error occurs.
-pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(P, HoprBalance), E>>;
+pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, HoprBalance), E>>;
 
 /// Contains abstraction over the deposit pool from PIX.
 ///
@@ -22,6 +23,9 @@ pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(P, HoprBalance), 
 ///
 /// In general, any anonymous privacy pool must be able to implement this trait
 /// to be used with PIX in production setup.
+///
+/// The operations MUST fail if used with a [`PixDepositAddress`] or [`PixDepositSecret`]
+/// whose tagged curve is not compatible with the underlying pool.
 ///
 /// The implementations should take care of all the retry/reliabililty of the operations, so the
 /// caller can assume that the operations will do best effort to succeed.
@@ -38,40 +42,67 @@ where
     type Receipt: Send + Sync + 'static;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
-    async fn deposit_funds_to(&self, dst: K::Public, amount: HoprBalance) -> Result<Self::Receipt, Self::Error>;
+    async fn deposit_funds_to(
+        &self,
+        id: PixAddressId,
+        dst: K::Public,
+        amount: HoprBalance,
+    ) -> Result<Self::Receipt, Self::Error>;
 
     /// Performs batch deposit of funds from node's Safe to multiple deposit addresses.
     ///
     /// This default implementation simply concurrently calls [`self.deposit_funds_to`].
     /// Implementors may choose a more efficient pool-native batching.
     ///
-    /// The method is allowed to return fewer receipts than deposits.
+    /// A successful return means that every deposit was accepted by the pool operation.
+    /// Receipts describe pool transactions, not individual inputs: a native atomic batch
+    /// may therefore return one receipt, while the default implementation returns one
+    /// receipt per input. Callers MUST NOT correlate receipts and deposits by position.
     async fn deposit_funds_to_multiple(
         &self,
-        deposits: Vec<(K::Public, HoprBalance)>,
+        deposits: Vec<(PixAddressId, K::Public, HoprBalance)>,
     ) -> Result<Vec<Self::Receipt>, Self::Error> {
         let futures = deposits
             .into_iter()
-            .map(|(dst, amount)| async move { self.deposit_funds_to(dst, amount).await });
+            .map(|(id, dst, amount)| async move { self.deposit_funds_to(id, dst, amount).await });
         join_all(futures).await.into_iter().collect()
     }
 
-    /// Returns a future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`].
+    /// Returns a future that resolves once at least `min_amount` is committed at
+    /// `dst` and available for the PIX session.
     ///
-    /// The returned future is `'static` so it can be spawned independently of the borrow on `&self`.
+    /// This operation runs on the Exit before the SURB threshold reconstructs the
+    /// corresponding [`PixDepositSecret`]. Implementations therefore MUST observe
+    /// the allocation using only `dst` and pool-specific viewing material; they
+    /// MUST NOT require the reconstructed withdrawal secret.
+    ///
+    /// The returned amount is the cumulative committed amount observed for `dst`,
+    /// including matching deposits committed before this method was called. Replayed
+    /// or duplicate chain events MUST NOT be counted twice. Implementations MUST
+    /// resume safely across disconnections and process chain reorganizations according
+    /// to the finality guarantees of their backend before resolving the future.
+    ///
+    /// Dropping the returned future cancels only that waiter; it MUST NOT remove
+    /// persisted deposit state or affect other waiters. The returned future is
+    /// `'static` so it can be spawned independently of the borrow on `&self`.
     fn notify_deposit(
         &self,
+        id: PixAddressId,
         dst: K::Public,
         min_amount: HoprBalance,
     ) -> Result<DepositNotification<'static, K::Public, Self::Error>, Self::Error>;
 
-    /// Performs withdrawal of a previously made deposit using its [`PixDepositSecret`] to the
-    /// `dst` Ethereum address.
+    /// Performs withdrawal of a previously made deposit using its tagged
+    /// [`PixDepositSecret`] to the `dst` Ethereum address. On the Exit, this secret
+    /// is supplied by the PIX protocol after threshold reconstruction from the
+    /// shares carried by used SURBs; the deposit-pool implementation does not
+    /// reconstruct it.
     ///
     /// Should allow for partial withdrawals if `amount` is specified,
     /// otherwise withdraws the entire deposit.
     async fn withdraw_deposit(
         &self,
+        id: PixAddressId,
         key: &K,
         dst: Address,
         amount: Option<HoprBalance>,
@@ -81,13 +112,19 @@ where
     ///
     /// This default implementation simply concurrently calls [`self.withdraw_deposit`].
     /// Implementors may choose a more efficient pool-native batching.
+    ///
+    /// On outer success, the returned vector MUST contain exactly one result for each
+    /// input key in the same order. The outer error represents failure to construct or
+    /// submit the batch as a whole; individual key failures belong in the corresponding
+    /// inner result. A native atomic batch may use one chain transaction internally,
+    /// but must still expose one logical result per input.
     async fn withdraw_multiple_deposits(
         &self,
-        keys: &[K],
+        deposits: &[(PixAddressId, K)],
         dst: Address,
     ) -> Result<Vec<Result<(Address, Self::Receipt), Self::Error>>, Self::Error> {
-        let futures = keys.iter().map(|key| async move {
-            self.withdraw_deposit(key, dst, None)
+        let futures = deposits.iter().map(|(id, key)| async move {
+            self.withdraw_deposit(*id, key, dst, None)
                 .await
                 .map(|receipt| (dst, receipt))
         });
@@ -99,7 +136,9 @@ where
     /// If `amount` is `None`, the entire deposit balance is transferred.
     async fn pool_transfer(
         &self,
+        source_id: PixAddressId,
         key: &K,
+        destination_id: PixAddressId,
         dst: K::Public,
         amount: Option<HoprBalance>,
     ) -> Result<Self::Receipt, Self::Error>;
@@ -110,13 +149,14 @@ where
     /// Implementors may choose a more efficient pool-native batching.
     async fn pool_transfer_multiple(
         &self,
-        keys: &[K],
+        deposits: &[(PixAddressId, K)],
+        destination_id: PixAddressId,
         dst: K::Public,
     ) -> Result<Vec<Result<(K::Public, Self::Receipt), Self::Error>>, Self::Error> {
-        let futures = keys.iter().map(|key| {
+        let futures = deposits.iter().map(|(source_id, key)| {
             let dst = dst.clone();
             async move {
-                self.pool_transfer(key, dst.clone(), None)
+                self.pool_transfer(*source_id, key, destination_id, dst.clone(), None)
                     .await
                     .map(|receipt| (dst, receipt))
             }
