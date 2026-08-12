@@ -67,7 +67,9 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
 ///
 /// `None` face value defaults to [`default_ticket_face_value`], which treats the balance as already
 /// counted in single-hop tickets. A zero face value prices relaying at nothing, so any channel funds
-/// any hop — but one must still exist, since the relayer issues a (zero-value) ticket on it.
+/// any hop — but one must still exist, since the relayer issues a (zero-value) ticket on it. That is
+/// a supported network-wide mode, not a producer error; it waives [`MIN_BALANCE_HEADROOM`] for every
+/// edge at once, leaving the probe scores as the only thing separating relays.
 ///
 /// `remaining_hops == 0` is the final hop: zero-value ticket, no channel needed. A `None` balance is
 /// unknown, which is not evidence of sufficiency.
