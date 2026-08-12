@@ -29,6 +29,23 @@ pub enum EdgeWeightType {
         /// Total number of acknowledgments received from the immediate peer.
         num_acks: u64,
     },
+    /// SURB round-trips expected across this edge over a reporting interval, and how many of them
+    /// were observed to complete.
+    ///
+    /// Deliberately not an [`EdgeTransportMeasurement`]: a round-trip proves the whole loop was
+    /// traversed but carries no per-edge latency, so recording it as a transport measurement would
+    /// mean inventing a duration and feeding it to the latency average — corrupting a figure that
+    /// is otherwise measured directly.
+    ///
+    /// Counts rather than single events, for the same reason
+    /// [`Self::ImmediateProtocolConformance`] carries counts: a SURB is minted far too often to
+    /// take a graph write lock per occurrence.
+    SurbRoundTrips {
+        /// SURBs minted across this edge during the interval.
+        expected: u64,
+        /// How many of them had their reply arrive.
+        observed: u64,
+    },
 }
 
 /// Trait for recording new observations onto a graph edge.
@@ -168,6 +185,17 @@ pub trait NetworkGraphView {
 
     /// Returns the self-identity node of this graph.
     fn identity(&self) -> &Self::NodeId;
+
+    /// Resolves a node to the slot it occupies in a [`PathId`], if the graph knows it.
+    ///
+    /// A [`PathId`] identifies a path by position rather than by key, so anything reporting a path
+    /// it did not obtain from [`simple_paths`](GraphPathSelection::simple_paths) -- notably SURB
+    /// round-trips, which know their route as public keys -- needs this to speak the same language.
+    ///
+    /// The mapping is only valid for as long as the node stays in the graph; a caller that holds an
+    /// id across a removal may find it refers to a different node, so ids are best resolved and
+    /// consumed promptly.
+    fn path_slot(&self, key: &Self::NodeId) -> Option<u64>;
 }
 
 /// A trait for mutating the graph topology.
