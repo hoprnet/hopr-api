@@ -14,7 +14,7 @@ pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(P, HoprBalance), 
 /// The funds within this pool are represented by the given keypair `K`.
 ///
 /// The secret and public key of the keypair should be convertible to [`PixDepositSecret`] and [`PixDepositAddress`],
-/// respectively The former is enforced by matching the [length of the keypair secret](Keypair::SecretLen) to the length
+/// respectively. The former is enforced by matching the [length of the keypair secret](Keypair::SecretLen) to the length
 /// of `PixDepositSecret` and the latter is enforced by the `Into<PixDepositAddress>` bound.
 ///
 /// The implementations can be completely non-anonymous (e.g., plain Ethereum transactions from
