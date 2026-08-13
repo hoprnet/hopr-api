@@ -1,6 +1,8 @@
-use futures::stream::BoxStream;
+use futures::{future::BoxFuture, stream::BoxStream};
 pub use hopr_types::internal::prelude::{ServiceEntry, ServiceMetadata, ServiceType};
 use hopr_types::primitive::prelude::{Address, HoprBalance};
+
+use crate::chain::ChainReceipt;
 
 /// Registry configuration of a single service type.
 ///
@@ -21,6 +23,20 @@ pub struct ServiceTypeConfig {
     pub registration_burn: HoprBalance,
     /// Amount burned when updating an entry under the type.
     pub update_burn: HoprBalance,
+}
+
+/// Registry-wide service configuration.
+///
+/// Unlike [`ServiceTypeConfig`], these values apply to the registry itself and have no service
+/// type key. Consumers must query them to learn the current state because the corresponding
+/// [`ChainEvent`](crate::chain::ChainEvent) variants report changes only after subscription.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ServiceRegistryConfig {
+    /// Amount burned when registering a new service type.
+    pub type_registration_fee: HoprBalance,
+    /// Node-Safe registry currently used to resolve authority over service entries.
+    pub node_safe_registry: Address,
 }
 
 /// Selector for entries in the on-chain service registry.
@@ -113,6 +129,42 @@ pub trait ChainReadServiceOperations {
         &self,
         service_type: ServiceType,
     ) -> Result<Option<ServiceTypeConfig>, Self::Error>;
+
+    /// Returns the current registry-wide configuration.
+    ///
+    /// This is also available independently of the snapshot-first registry subscription.
+    async fn get_service_registry_config(&self) -> Result<ServiceRegistryConfig, Self::Error>;
+}
+
+/// Operations through which a node advertises its own services.
+///
+/// Implementations submit a transaction whose effective on-chain caller is the Safe currently
+/// bound to the node. Paid writes atomically approve exactly the current burn and execute the
+/// registry call, so a concurrent fee increase fails instead of overcharging the Safe.
+#[async_trait::async_trait]
+#[auto_impl::auto_impl(&, Box, Arc)]
+pub trait ChainWriteServiceOperations {
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Registers this node under `service_type` with opaque service-specific `metadata`.
+    async fn register_service<'a>(
+        &'a self,
+        service_type: ServiceType,
+        metadata: ServiceMetadata,
+    ) -> Result<BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>;
+
+    /// Replaces this node's metadata under `service_type`.
+    async fn update_service<'a>(
+        &'a self,
+        service_type: ServiceType,
+        metadata: ServiceMetadata,
+    ) -> Result<BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>;
+
+    /// Removes this node's entry under `service_type`. Deregistration is always free.
+    async fn deregister_service<'a>(
+        &'a self,
+        service_type: ServiceType,
+    ) -> Result<BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>;
 }
 
 #[cfg(test)]

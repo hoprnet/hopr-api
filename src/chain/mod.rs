@@ -4,7 +4,7 @@
 //! - Account operations (read/write)
 //! - Channel operations (read/write)
 //! - Safe operations (read/write)
-//! - Service registry operations (read)
+//! - Service registry operations (read/write)
 //! - Key operations (packet↔chain key mapping)
 //! - Chain events (subscription)
 //! - Chain values (configuration queries)
@@ -44,6 +44,7 @@ pub trait HoprChainApi:
     + ChainReadSafeOperations<Error = Self::ChainError>
     + ChainWriteSafeOperations<Error = Self::ChainError>
     + ChainReadServiceOperations<Error = Self::ChainError>
+    + ChainWriteServiceOperations<Error = Self::ChainError>
     + ChainEvents<Error = Self::ChainError>
     + ChainKeyOperations<Error = Self::ChainError>
     + ChainValues<Error = Self::ChainError>
@@ -62,6 +63,7 @@ where
         + ChainReadSafeOperations<Error = E>
         + ChainWriteSafeOperations<Error = E>
         + ChainReadServiceOperations<Error = E>
+        + ChainWriteServiceOperations<Error = E>
         + ChainEvents<Error = E>
         + ChainKeyOperations<Error = E>
         + ChainValues<Error = E>
