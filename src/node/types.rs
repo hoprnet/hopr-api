@@ -99,11 +99,14 @@ pub struct AnnouncedPeer {
     pub origin: AnnouncementOrigin,
 }
 
-/// Identifier for a Pix deposit address.
+/// Identifier for a PIX deposit address.
 pub type PixAddressId = (HoprPseudonym, NonZeroU32);
 
 /// Used to notify that the Exit has registered a sufficient deposit on a deposit address.
 pub type DepositUpdated = futures::channel::mpsc::Sender<(PixAddressId, HoprBalance)>;
+
+/// Additional data that is associated with a PIX deposit.
+pub type AdditionalDepositData = Box<[u8]>;
 
 /// Data for [`NewDepositAddress`](PixEvent) event.
 #[derive(Debug, Clone)]
@@ -114,6 +117,8 @@ pub struct PixNewDepositAddress {
     pub address: PixDepositAddress,
     /// The quota in bytes that corresponds to this deposit.
     pub quota: u64,
+    /// Optional additional untyped data associated with the deposit.
+    pub additional_data: Option<AdditionalDepositData>,
 }
 
 /// Data for [`DepositAddressReceived`](PixEvent) event.
@@ -125,6 +130,8 @@ pub struct PixDepositAddressReceived {
     pub address: PixDepositAddress,
     /// The quota in bytes that corresponds to this deposit.
     pub quota: u64,
+    /// Optional additional untyped data associated with the deposit.
+    pub additional_data: Option<AdditionalDepositData>,
     /// Sender of the [`DepositUpdated`] events.
     ///
     /// The [`DepositUpdated`] is optionally used to give future feedback that a deposit has
