@@ -4,6 +4,7 @@
 //! - Account operations (read/write)
 //! - Channel operations (read/write)
 //! - Safe operations (read/write)
+//! - Service registry operations (read/write)
 //! - Key operations (packet↔chain key mapping)
 //! - Chain events (subscription)
 //! - Chain values (configuration queries)
@@ -14,6 +15,7 @@ mod deposit_pool;
 mod events;
 mod keys;
 mod safe;
+mod services;
 mod tickets;
 mod values;
 
@@ -23,6 +25,7 @@ pub use deposit_pool::*;
 pub use events::*;
 pub use keys::*;
 pub use safe::*;
+pub use services::*;
 pub use tickets::*;
 pub use values::*;
 
@@ -40,6 +43,8 @@ pub trait HoprChainApi:
     + ChainWriteChannelOperations<Error = Self::ChainError>
     + ChainReadSafeOperations<Error = Self::ChainError>
     + ChainWriteSafeOperations<Error = Self::ChainError>
+    + ChainReadServiceOperations<Error = Self::ChainError>
+    + ChainWriteServiceOperations<Error = Self::ChainError>
     + ChainEvents<Error = Self::ChainError>
     + ChainKeyOperations<Error = Self::ChainError>
     + ChainValues<Error = Self::ChainError>
@@ -57,6 +62,8 @@ where
         + ChainWriteChannelOperations<Error = E>
         + ChainReadSafeOperations<Error = E>
         + ChainWriteSafeOperations<Error = E>
+        + ChainReadServiceOperations<Error = E>
+        + ChainWriteServiceOperations<Error = E>
         + ChainEvents<Error = E>
         + ChainKeyOperations<Error = E>
         + ChainValues<Error = E>
