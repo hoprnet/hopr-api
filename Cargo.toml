@@ -80,7 +80,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { git = "https://github.com/hoprnet/hopr-types", rev = "2a3bb391f1f98475d033b105c69090d050aaff0c", features = [
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", rev = "68d626ba041da06fde90c9c3c51a4d53c5ab0c4c", features = [
   "crypto",
   "internal",
   "primitive",
