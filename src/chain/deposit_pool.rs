@@ -6,17 +6,17 @@ use hopr_types::{
     primitive::prelude::{Address, HoprBalance},
 };
 
-/// A future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`]
-/// or an error occurs.
+/// A future that resolves once `min_amount` has been deposited to the curve-specific
+/// public key `dst`, or an error occurs.
 pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, HoprBalance), E>>;
 
 /// Contains abstraction over the deposit pool from PIX.
 ///
 /// The funds within this pool are represented by the given keypair `K`.
 ///
-/// The secret and public key of the keypair should be convertible to [`PixDepositSecret`] and [`PixDepositAddress`],
-/// respectively The former is enforced by matching the [length of the keypair secret](Keypair::SecretLen) to the length
-/// of `PixDepositSecret` and the latter is enforced by the `Into<PixDepositAddress>` bound.
+/// Its public key is convertible to [`PixDepositAddress`]. [`PixAddressId`] is
+/// curve-agnostic and identifies the protocol allocation independently from the
+/// concrete public-key representation selected by `K`.
 ///
 /// The implementations can be completely non-anonymous (e.g., plain Ethereum transactions from
 /// node's Safe), or anonymous using a privacy pool in the background.
@@ -24,10 +24,10 @@ pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, 
 /// In general, any anonymous privacy pool must be able to implement this trait
 /// to be used with PIX in production setup.
 ///
-/// The operations MUST fail if used with a [`PixDepositAddress`] or [`PixDepositSecret`]
-/// whose tagged curve is not compatible with the underlying pool.
+/// The keypair type selects the pool's curve at compile time. Implementations
+/// MUST reject a reconstructed [`PixDepositSecret`] whose curve does not match `K`.
 ///
-/// The implementations should take care of all the retry/reliabililty of the operations, so the
+/// The implementations should take care of all retry and reliability concerns, so the
 /// caller can assume that the operations will do best effort to succeed.
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Box, Arc)]
@@ -42,6 +42,10 @@ where
     type Receipt: Send + Sync + 'static;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
+    ///
+    /// `id` is the idempotency key. Repeating a successfully submitted allocation
+    /// with the same `id`, `dst`, and `amount` MUST NOT allocate funds twice. Reusing
+    /// an `id` with different parameters MUST fail.
     async fn deposit_funds_to(
         &self,
         id: PixAddressId,
@@ -98,8 +102,9 @@ where
     /// shares carried by used SURBs; the deposit-pool implementation does not
     /// reconstruct it.
     ///
-    /// Should allow for partial withdrawals if `amount` is specified,
-    /// otherwise withdraws the entire deposit.
+    /// If `amount` is specified, exactly that amount MUST be withdrawn; an
+    /// implementation that cannot produce change MUST return an error rather than
+    /// over-withdraw. If it is `None`, the entire deposit is withdrawn.
     async fn withdraw_deposit(
         &self,
         id: PixAddressId,
