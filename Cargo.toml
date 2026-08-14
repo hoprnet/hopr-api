@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "1.21.0"
+version = "1.22.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -61,7 +61,7 @@ chrono = { version = "0.4.45", default-features = false, features = [
   "std",
   "clock",
 ] }
-futures = { version = "0.3.33", default-features = false, features = [
+futures = { version = "0.3.34", default-features = false, features = [
   "std",
   "async-await",
 ] }
@@ -80,7 +80,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "2.2.1", features = [
+hopr-types = { version = "2.3.0", features = [
   "crypto",
   "internal",
   "primitive",
