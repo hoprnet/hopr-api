@@ -66,7 +66,10 @@ pub trait EdgeNetworkObservableRead {
     ///
     /// This is obviously settable only between the emitter of the measurement (this node) and
     /// arbitrary other node in the graph, but could be used for optimizations and path planning.
-    fn is_connected(&self) -> bool;
+    ///
+    /// `None` when never observed — not the same as observing there is none. Treating "unchecked"
+    /// as "down" excludes the edge, which stops it being probed, which keeps it unchecked.
+    fn is_connected(&self) -> Option<bool>;
 }
 
 /// Trait for reading HOPR protocol-level properties of an edge.
@@ -125,6 +128,14 @@ pub trait EdgeObservable: EdgeObservableRead + EdgeObservableWrite {}
 impl<T: EdgeObservableWrite + EdgeObservableRead> EdgeObservable for T {}
 
 /// Trait for recording and querying transport-level link quality metrics for a transport link.
+///
+/// Accessors report `None` for "not measured" rather than a neutral number, because the neutral
+/// number is not neutral: a rate of `0.0` is also what a wholly failing stream reports. Selection
+/// needs the difference — unmeasured earns an exploration penalty, measured-dead is starved.
+///
+/// How much evidence counts as measured is each signal's own business: a probe stream may report
+/// from its first outcome, an acknowledgement rate may wait for a minimum volume, a windowed signal
+/// may require a populated window. An aggregate is present when *any* constituent is.
 pub trait EdgeLinkObservable {
     /// Records a new result of the probe over this path segment.
     fn record(&mut self, measurement: EdgeTransportMeasurement);
@@ -135,14 +146,17 @@ pub trait EdgeLinkObservable {
     /// A value representing the average success rate of probes.
     ///
     /// It is from the range [0.0, 1.0]. The higher the value, the better the score.
-    fn average_probe_rate(&self) -> f64;
-
-    /// Whether any probe outcome, successful or failed, has been recorded.
     ///
-    /// Cannot be inferred from the averages: an all-failed stream holds exactly `0.0`, which is
-    /// also the initial value. Implementations must keep this in agreement with
-    /// [`score`](Self::score): `has_observations() == score().is_some()`.
-    fn has_observations(&self) -> bool;
+    /// `None` when nothing has been recorded: an all-failed stream holds `0.0`, and so does an
+    /// unprobed one.
+    fn average_probe_rate(&self) -> Option<f64>;
+
+    /// Whether any outcome has been recorded, successful or failed.
+    ///
+    /// Derived from [`average_probe_rate`](Self::average_probe_rate) so the two cannot disagree.
+    fn has_observations(&self) -> bool {
+        self.average_probe_rate().is_some()
+    }
 
     /// Score in `[0.0, 1.0]`; higher is better.
     ///

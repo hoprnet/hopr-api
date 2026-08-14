@@ -213,7 +213,7 @@ where
 
                     // Fallback: use immediate connectivity score if available
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                     {
                         let base = score_or_penalize(cost, immediate.score(), penalty);
                         // Same as above: enforce ack rate for 1-hop routes
@@ -229,7 +229,7 @@ where
                 0 => {
                     // First edge: require a connected peer whose channel can fund the rest of the path
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                         && let Some(intermediate) = observation.intermediate_qos()
                         && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                     {
@@ -275,7 +275,7 @@ where
                 v if v == (length - 1) => {
                     // Last edge (relay -> me): require connectivity with immediate score
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                     {
                         let base = score_or_penalize(cost, immediate.score(), penalty);
                         return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
@@ -319,7 +319,7 @@ where
                 0 => {
                     // First edge: require a connected peer whose channel can fund the rest of the path
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                         && let Some(intermediate) = observation.intermediate_qos()
                         && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                     {
@@ -371,14 +371,14 @@ mod tests {
     /// Stub for immediate (1-hop) probe measurement.
     #[derive(Debug, Default, Clone, serde::Serialize)]
     struct StubImmediate {
-        connected: bool,
+        connected: Option<bool>,
         /// `None` models a stream with no observations; `Some(0.0)` one measured and found dead.
         score: Option<f64>,
         ack_rate: Option<f64>,
     }
 
     impl EdgeNetworkObservableRead for StubImmediate {
-        fn is_connected(&self) -> bool {
+        fn is_connected(&self) -> Option<bool> {
             self.connected
         }
     }
@@ -398,7 +398,7 @@ mod tests {
             unreachable!("not used in value function tests")
         }
 
-        fn average_probe_rate(&self) -> f64 {
+        fn average_probe_rate(&self) -> Option<f64> {
             unreachable!("not used in value function tests")
         }
 
@@ -443,7 +443,7 @@ mod tests {
             unreachable!("not used in value function tests")
         }
 
-        fn average_probe_rate(&self) -> f64 {
+        fn average_probe_rate(&self) -> Option<f64> {
             unreachable!("not used in value function tests")
         }
 
@@ -494,7 +494,7 @@ mod tests {
         /// Attaches a *connected* immediate stream.
         fn with_immediate(mut self, score: Option<f64>, ack_rate: Option<f64>) -> Self {
             self.immediate = Some(StubImmediate {
-                connected: true,
+                connected: Some(true),
                 score,
                 ack_rate,
             });
@@ -558,6 +558,30 @@ mod tests {
     /// Fully connected and probed, over a channel holding exactly `balance`.
     fn funded_with(balance: u64) -> Observations {
         healthy().with_intermediate(Some(balance), Some(GOOD_SCORE))
+    }
+
+    /// A funded channel whose immediate stream exists but never observed connectivity.
+    ///
+    /// Reachable because the immediate stream is also created by traffic-derived updates, which
+    /// carry no connectivity evidence.
+    fn connectivity_unknown() -> Observations {
+        let mut obs = Observations::default().with_intermediate(Some(FUNDED), None);
+        obs.immediate = Some(StubImmediate {
+            connected: None,
+            score: None,
+            ack_rate: None,
+        });
+        obs
+    }
+
+    /// The same edge, but connectivity was checked and found down.
+    fn connectivity_down() -> Observations {
+        let mut obs = connectivity_unknown();
+        obs.immediate = obs.immediate.map(|imm| StubImmediate {
+            connected: Some(false),
+            ..imm
+        });
+        obs
     }
 
     // ── Harness ─────────────────────────────────────────────────────────
@@ -1054,6 +1078,29 @@ mod tests {
         assert!(
             share < 1e-8,
             "a measured-dead edge must draw a negligible share of the sampling weight, got {share}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::forward(Direction::Forward)]
+    #[case::forward_without_self_loopback(Direction::ForwardWithoutSelfLoopback)]
+    fn unchecked_connectivity_must_be_penalized_not_rejected(#[case] direction: Direction) -> anyhow::Result<()> {
+        // Rejecting the first edge on unknown connectivity is self-sealing: the edge is never
+        // selected, so it is never probed, so connectivity stays unknown. Only an observed
+        // disconnection may reject.
+        let value_fn = direction.build(3, None)?.into_value_fn();
+
+        let unknown = value_fn(1.0, &connectivity_unknown(), 0);
+        let down = value_fn(1.0, &connectivity_down(), 0);
+
+        assert!(
+            unknown > 0.0,
+            "an unchecked first edge must stay selectable so it can be probed, got {unknown}"
+        );
+        assert!(
+            down < 0.0,
+            "an edge observed to be down must still be rejected, got {down}"
         );
         Ok(())
     }
