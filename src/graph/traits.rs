@@ -114,7 +114,7 @@ pub trait EdgeObservableRead {
     ///
     /// Per RFC-0014 §4.2 the streams combine as `(imm + inter) / 2` only when both are present,
     /// else the single present one. "Present" means *has observations*, not *allocated* — a
-    /// capacity or connectivity update creates a stream without recording a probe, and averaging
+    /// balance or connectivity update creates a stream without recording a probe, and averaging
     /// against that empty stream halves every edge only one stream can observe.
     fn score(&self) -> Option<f64>;
 }

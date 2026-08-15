@@ -40,7 +40,9 @@ pub trait MeasurablePath {
 
 /// Update for the edge between src and dest.
 ///
-/// * `None` - the channel is gone, so its balance is no longer known
+/// * `None` - the balance is unknown, whether because the channel closed or because the indexer has not reported one
+///   yet. The two are deliberately collapsed: nothing downstream may spend against either, and distinguishing them
+///   would invite a consumer to drop an edge that is merely unseen.
 /// * `Some(balance)` - the balance was updated
 #[derive(Debug, Copy, Clone)]
 pub struct EdgeBalanceUpdate {

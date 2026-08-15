@@ -65,20 +65,19 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
 /// but time-varying, so it is supplied per evaluation rather than stored on the edge; see
 /// [`Balance`](super::traits::Balance).
 ///
-/// `None` face value defaults to [`default_ticket_face_value`], which treats the balance as already
-/// counted in single-hop tickets. A zero face value prices relaying at nothing, so any channel funds
-/// any hop — but one must still exist, since the relayer issues a (zero-value) ticket on it. That is
-/// a supported network-wide mode, not a producer error; it waives [`MIN_BALANCE_HEADROOM`] for every
-/// edge at once, leaving the probe scores as the only thing separating relays.
+/// The face value is already resolved by the caller — the constructors substitute
+/// [`default_ticket_face_value`] when none was supplied, so this sees a concrete figure. A zero face value prices
+/// relaying at nothing, so any channel funds any hop — but one must still exist, since the relayer issues a
+/// (zero-value) ticket on it. That is a supported network-wide mode, not a producer error; it waives
+/// [`MIN_BALANCE_HEADROOM`] for every edge at once, leaving the probe scores as the only thing separating relays.
 ///
 /// `remaining_hops == 0` is the final hop: zero-value ticket, no channel needed. A `None` balance is
 /// unknown, which is not evidence of sufficiency.
-fn balance_suffices(balance: Option<Balance>, remaining_hops: usize, ticket_face_value: Option<Balance>) -> bool {
+fn balance_suffices(balance: Option<Balance>, remaining_hops: usize, ticket_face_value: Balance) -> bool {
     if remaining_hops == 0 {
         return true;
     }
 
-    let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
     if ticket_face_value.is_zero() {
         return balance.is_some();
     }
@@ -100,7 +99,7 @@ fn require_funding<W: EdgeObservableRead>(
     cost: f64,
     penalty: f64,
     remaining_hops: usize,
-    ticket_face_value: Option<Balance>,
+    ticket_face_value: Balance,
 ) -> f64 {
     if let Some(intermediate) = observation.intermediate_qos()
         && balance_suffices(intermediate.balance(), remaining_hops, ticket_face_value)
@@ -189,6 +188,9 @@ where
         let length = length.get();
         let penalty = penalty.clamp(0.0, 1.0);
         let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
+        // Resolved here rather than per edge: the face value is network-wide and fixed for the
+        // lifetime of this function, so the path search should not re-derive it for every edge.
+        let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
         Self {
             initial: 1.0,
             min: Some(0.0),
@@ -268,6 +270,9 @@ where
         let length = length.get();
         let penalty = penalty.clamp(0.0, 1.0);
         let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
+        // Resolved here rather than per edge: the face value is network-wide and fixed for the
+        // lifetime of this function, so the path search should not re-derive it for every edge.
+        let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
         Self {
             initial: 1.0,
             min: Some(0.0),
@@ -312,6 +317,9 @@ where
         let length = length.get();
         let penalty = penalty.clamp(0.0, 1.0);
         let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
+        // Resolved here rather than per edge: the face value is network-wide and fixed for the
+        // lifetime of this function, so the path search should not re-derive it for every edge.
+        let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
         Self {
             initial: 1.0,
             min: Some(0.0),
@@ -1129,7 +1137,9 @@ mod tests {
             balance_suffices(
                 balance.map(Balance::from),
                 remaining_hops,
-                ticket_face_value.map(Balance::from)
+                ticket_face_value
+                    .map(Balance::from)
+                    .unwrap_or_else(default_ticket_face_value)
             ),
             expected
         );
@@ -1140,10 +1150,10 @@ mod tests {
         #[values(1, 2, 3)] remaining_hops: usize,
         #[values(None, Some(1_000))] ticket_face_value: Option<u64>,
     ) {
-        let face_value = ticket_face_value.map(Balance::from);
-        let required = Balance::from(remaining_hops as u64)
-            * face_value.unwrap_or_else(default_ticket_face_value)
-            * Balance::from(MIN_BALANCE_HEADROOM);
+        let face_value = ticket_face_value
+            .map(Balance::from)
+            .unwrap_or_else(default_ticket_face_value);
+        let required = Balance::from(remaining_hops as u64) * face_value * Balance::from(MIN_BALANCE_HEADROOM);
 
         assert!(
             balance_suffices(Some(required), remaining_hops, face_value),
@@ -1160,9 +1170,13 @@ mod tests {
         // Every case passing `None` reads the balance as a ticket count. A real face value must
         // make the same balance insufficient.
         let one_ticket_at_unit_face = Balance::from(MIN_BALANCE_HEADROOM);
-        assert!(balance_suffices(Some(one_ticket_at_unit_face), 1, None));
+        assert!(balance_suffices(
+            Some(one_ticket_at_unit_face),
+            1,
+            default_ticket_face_value()
+        ));
         assert!(
-            !balance_suffices(Some(one_ticket_at_unit_face), 1, Some(Balance::from(1_000u64))),
+            !balance_suffices(Some(one_ticket_at_unit_face), 1, Balance::from(1_000u64)),
             "a larger face value must make the same balance insufficient"
         );
     }
@@ -1189,10 +1203,19 @@ mod tests {
 
     #[test]
     fn forward_last_edge_should_accept_a_drained_channel() -> anyhow::Result<()> {
-        let value = edge_value(Direction::Forward, 3, 2, &funded_with(0))?;
+        // Intermediate stream only: `funded_with` also carries a healthy immediate stream, and the
+        // connectivity fallback would return a positive value on its own — so with it present this
+        // would pass even with the final-hop exemption removed entirely.
+        let drained = Observations::default().with_intermediate(Some(0), Some(GOOD_SCORE));
+        let value = edge_value(Direction::Forward, 3, 2, &drained)?;
+
+        // Not merely positive: with the exemption removed this arm falls through to the
+        // unobserved-edge penalty, which is also positive. Only a value carrying the intermediate
+        // score shows the drained channel was accepted rather than merely tolerated.
         assert!(
-            value > 0.0,
-            "the final hop carries a zero-value ticket, so a drained channel must not reject it"
+            value > TEST_PENALTY,
+            "a drained final hop must be scored on its intermediate stream, not handed the exploration penalty: got \
+             {value}, penalty is {TEST_PENALTY}"
         );
         Ok(())
     }
