@@ -67,7 +67,7 @@ futures = { version = "0.3.34", default-features = false, features = [
 ] }
 futures-concurrency = "7.7.1"
 # do not update libp2p-identity until new libp2p version
-libp2p-identity = { version = "0.2.14", features = [
+libp2p-identity = { version = "0.3.0", features = [
   "peerid",
   "ed25519",
   "rand",
