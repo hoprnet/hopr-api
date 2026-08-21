@@ -2,12 +2,20 @@ use futures::future::{BoxFuture, join_all};
 pub use hopr_types::crypto::primitives::{PixDepositAddress, PixDepositSecret};
 use hopr_types::{
     crypto::prelude::Keypair,
+    network::PixAddressId,
     primitive::prelude::{Address, HoprBalance},
 };
 
+/// Opaque pool-specific data associated with a PIX deposit.
+///
+/// The PIX protocol and strategy only transport these bytes. Their meaning is defined by the
+/// selected [`DepositPool`] implementation. Callers must not log the contents because an
+/// implementation may use them to carry private scanning material on the Exit side.
+pub type AdditionalDepositData = Box<[u8]>;
+
 /// A future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`]
 /// or an error occurs.
-pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(P, HoprBalance), E>>;
+pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, HoprBalance), E>>;
 
 /// Contains abstraction over the deposit pool from PIX.
 ///
@@ -38,7 +46,16 @@ where
     type Receipt: Send + Sync + 'static;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
-    async fn deposit_funds_to(&self, dst: K::Public, amount: HoprBalance) -> Result<Self::Receipt, Self::Error>;
+    ///
+    /// `id` is the stable local PIX allocation identifier. `additional_data` is interpreted only
+    /// by the pool implementation and should be handled idempotently together with `id`.
+    async fn deposit_funds_to(
+        &self,
+        id: PixAddressId,
+        dst: K::Public,
+        additional_data: Option<AdditionalDepositData>,
+        amount: HoprBalance,
+    ) -> Result<Self::Receipt, Self::Error>;
 
     /// Performs batch deposit of funds from node's Safe to multiple deposit addresses.
     ///
@@ -48,11 +65,11 @@ where
     /// The method is allowed to return fewer receipts than deposits.
     async fn deposit_funds_to_multiple(
         &self,
-        deposits: Vec<(K::Public, HoprBalance)>,
+        deposits: Vec<(PixAddressId, K::Public, Option<AdditionalDepositData>, HoprBalance)>,
     ) -> Result<Vec<Self::Receipt>, Self::Error> {
-        let futures = deposits
-            .into_iter()
-            .map(|(dst, amount)| async move { self.deposit_funds_to(dst, amount).await });
+        let futures = deposits.into_iter().map(|(id, dst, additional_data, amount)| async move {
+            self.deposit_funds_to(id, dst, additional_data, amount).await
+        });
         join_all(futures).await.into_iter().collect()
     }
 
@@ -61,7 +78,9 @@ where
     /// The returned future is `'static` so it can be spawned independently of the borrow on `&self`.
     fn notify_deposit(
         &self,
+        id: PixAddressId,
         dst: K::Public,
+        additional_data: Option<AdditionalDepositData>,
         min_amount: HoprBalance,
     ) -> Result<DepositNotification<'static, K::Public, Self::Error>, Self::Error>;
 
@@ -72,6 +91,7 @@ where
     /// otherwise withdraws the entire deposit.
     async fn withdraw_deposit(
         &self,
+        id: PixAddressId,
         key: &K,
         dst: Address,
         amount: Option<HoprBalance>,
@@ -83,11 +103,11 @@ where
     /// Implementors may choose a more efficient pool-native batching.
     async fn withdraw_multiple_deposits(
         &self,
-        keys: &[K],
+        keys: &[(PixAddressId, K)],
         dst: Address,
     ) -> Result<Vec<Result<(Address, Self::Receipt), Self::Error>>, Self::Error> {
-        let futures = keys.iter().map(|key| async move {
-            self.withdraw_deposit(key, dst, None)
+        let futures = keys.iter().map(|(id, key)| async move {
+            self.withdraw_deposit(*id, key, dst, None)
                 .await
                 .map(|receipt| (dst, receipt))
         });
@@ -99,8 +119,11 @@ where
     /// If `amount` is `None`, the entire deposit balance is transferred.
     async fn pool_transfer(
         &self,
+        source_id: PixAddressId,
         key: &K,
+        destination_id: PixAddressId,
         dst: K::Public,
+        destination_data: Option<AdditionalDepositData>,
         amount: Option<HoprBalance>,
     ) -> Result<Self::Receipt, Self::Error>;
 
@@ -110,13 +133,23 @@ where
     /// Implementors may choose a more efficient pool-native batching.
     async fn pool_transfer_multiple(
         &self,
-        keys: &[K],
+        keys: &[(PixAddressId, K)],
+        destination_id: PixAddressId,
         dst: K::Public,
+        destination_data: Option<AdditionalDepositData>,
     ) -> Result<Vec<Result<(K::Public, Self::Receipt), Self::Error>>, Self::Error> {
-        let futures = keys.iter().map(|key| {
+        let futures = keys.iter().map(|(source_id, key)| {
             let dst = dst.clone();
+            let destination_data = destination_data.clone();
             async move {
-                self.pool_transfer(key, dst.clone(), None)
+                self.pool_transfer(
+                    *source_id,
+                    key,
+                    destination_id,
+                    dst.clone(),
+                    destination_data,
+                    None,
+                )
                     .await
                     .map(|receipt| (dst, receipt))
             }
