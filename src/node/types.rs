@@ -1,11 +1,14 @@
 //! Data types used across the node API.
 
-use std::{future::Future, num::NonZeroU32};
+use std::future::Future;
+
+pub use crate::chain::AdditionalDepositData;
+pub use hopr_types::network::PixAddressId;
 
 use hopr_types::{
     chain::chain_events::ChainEvent,
     crypto::primitives::{PixDepositAddress, PixDepositSecret},
-    internal::prelude::{HoprPseudonym, RedeemableTicket, Ticket},
+    internal::prelude::{RedeemableTicket, Ticket},
     primitive::{balance::HoprBalance, prelude::Address},
 };
 
@@ -99,14 +102,8 @@ pub struct AnnouncedPeer {
     pub origin: AnnouncementOrigin,
 }
 
-/// Identifier for a PIX deposit address.
-pub type PixAddressId = (HoprPseudonym, NonZeroU32);
-
 /// Used to notify that the Exit has registered a sufficient deposit on a deposit address.
 pub type DepositUpdated = futures::channel::mpsc::Sender<(PixAddressId, HoprBalance)>;
-
-/// Additional data that is associated with a PIX deposit.
-pub type AdditionalDepositData = Box<[u8]>;
 
 /// Data for [`NewDepositAddress`](PixEvent) event.
 #[derive(Debug, Clone)]
