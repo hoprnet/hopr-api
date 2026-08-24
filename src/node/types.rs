@@ -1,11 +1,12 @@
 //! Data types used across the node API.
 
-use std::{future::Future, num::NonZeroU32};
+use std::future::Future;
 
+pub use hopr_types::crypto::primitives::PixAddressId;
 use hopr_types::{
     chain::chain_events::ChainEvent,
     crypto::primitives::{PixDepositAddress, PixDepositSecret},
-    internal::prelude::{HoprPseudonym, RedeemableTicket, Ticket},
+    internal::prelude::{RedeemableTicket, Ticket},
     primitive::{balance::HoprBalance, prelude::Address},
 };
 
@@ -98,9 +99,6 @@ pub struct AnnouncedPeer {
     /// How the announcement was discovered.
     pub origin: AnnouncementOrigin,
 }
-
-/// Identifier for a PIX deposit address.
-pub type PixAddressId = (HoprPseudonym, NonZeroU32);
 
 /// Used to notify that the Exit has registered a sufficient deposit on a deposit address.
 pub type DepositUpdated = futures::channel::mpsc::Sender<(PixAddressId, HoprBalance)>;

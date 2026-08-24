@@ -2702,7 +2702,7 @@ dependencies = [
 
 [[package]]
 name = "hopr-api"
-version = "2.0.1"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2743,9 +2743,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "2.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a19fe24538d5d68590496763119afbb5f8ccb466f88abbf36cda7a8c7d49e1f1"
+version = "2.4.0"
+source = "git+https://github.com/hoprnet/hopr-types?branch=lukas%2Fslim-curvy-pix-types#f01403d12e451d4bd6c239e522b35afbfca2a851"
 dependencies = [
  "aes",
  "anyhow",
