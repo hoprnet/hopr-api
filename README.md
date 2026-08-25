@@ -18,14 +18,14 @@ Choose the smallest feature set you need:
 
 ```toml
 [dependencies]
-hopr-api = { version = "3.0.0", features = ["chain", "network"] }
+hopr-api = { version = "4.0.0", features = ["chain", "network"] }
 ```
 
 or enable the complete API surface:
 
 ```toml
 [dependencies]
-hopr-api = { version = "3.0.0", features = ["full"] }
+hopr-api = { version = "4.0.0", features = ["full"] }
 ```
 
 Then import the traits your component implements:
