@@ -40,7 +40,6 @@ where
     /// Pool-specific data associated with a PIX deposit
     ///
     /// This is typically additional data transported via PIX between Entry and Exit nodes.
-    /// It is optional and per-pool specific, and can be left out as `()`.
     type DepositData: Clone + Send + Sync + 'static;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
