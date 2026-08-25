@@ -162,10 +162,10 @@ pub struct PixDepositAddressReceived {
     pub deposit_data: PixDepositData,
     /// Sender of the [`DepositUpdated`] events.
     ///
-    /// The [`DepositUpdated`] is optionally used to give future feedback that a deposit has
+    /// The `deposit_updated` is used to give future feedback that a deposit has
     /// been received to the address. It may be used multiple times, and once the sum
     /// of all deposits reaches the price of the quota, the Exit can continue executing the PIX protocol.
-    pub deposit_updated: Option<DepositUpdated>,
+    pub deposit_updated: DepositUpdated,
 }
 
 /// Data for [`PrivateKeyRecovered`](PixEvent) event.
