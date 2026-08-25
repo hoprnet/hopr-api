@@ -13,6 +13,9 @@ pub enum StateSyncOptions {
     /// The current state of all accounts (also private ones) is emitted as [`ChainEvent::Announcement`] events
     /// in the stream, preceding all the future events of that kind.
     AllAccounts,
+    /// The current registry-wide type registration fee and node-safe registry pointer are emitted
+    /// before future changes to either value.
+    ServiceRegistryConfig,
 }
 
 /// Allows subscribing to on-chain events.
