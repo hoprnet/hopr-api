@@ -5,6 +5,8 @@ use hopr_types::{
     primitive::prelude::{Address, HoprBalance},
 };
 
+use crate::node::PixDepositData;
+
 /// A future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`]
 /// or an error occurs.
 pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, HoprBalance), E>>;
@@ -54,10 +56,18 @@ where
     /// Some receipt returned on successful deposits and withdrawals.
     type Receipt: Send + Sync + 'static;
 
-    /// Pool-specific data associated with a PIX deposit
+    /// Pool-specific data associated with a PIX deposit.
     ///
-    /// This is typically additional data transported via PIX between Entry and Exit nodes.
-    type DepositData: Clone + Send + Sync + 'static;
+    /// The type must be fallibly-convertible to/from [`PixDepositData`].
+    type PoolDepositData: Clone
+        + TryFrom<PixDepositData, Error = Self::Error>
+        + TryInto<PixDepositData, Error = Self::Error>
+        + Send
+        + Sync
+        + 'static;
+
+    /// Generates additional deposit data identified by `id`.
+    async fn generate_deposit_data(&self, _id: &PixAddressId) -> Result<Self::PoolDepositData, Self::Error>;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
     async fn deposit_funds_to(
@@ -65,12 +75,12 @@ where
         id: &PixAddressId,
         dst: &K::Public,
         amount: HoprBalance,
-        additional_data: Option<Self::DepositData>,
+        additional_data: Self::PoolDepositData,
     ) -> Result<Self::Receipt, Self::Error>;
 
     /// Performs batch deposit of funds from node's Safe to multiple deposit addresses.
     ///
-    /// This default implementation simply concurrently calls [`self.deposit_funds_to`].
+    /// This default implementation simply concurrently calls `deposit_funds_to`.
     /// Implementors may choose a more efficient pool-native batching.
     ///
     /// One result per deposit, so a partial failure keeps the receipts of the deposits that did
@@ -79,7 +89,7 @@ where
     /// caller may and may not assume about the returned `Vec`.
     async fn deposit_funds_to_multiple(
         &self,
-        deposits: &[(PixAddressId, K::Public, HoprBalance, Option<Self::DepositData>)],
+        deposits: &[(PixAddressId, K::Public, HoprBalance, Self::PoolDepositData)],
     ) -> Result<BatchOutcomes<Self::Receipt, Self::Error>, Self::Error> {
         let futures = deposits.iter().map(|(id, dst, amount, data)| {
             let data = data.clone();
@@ -143,7 +153,7 @@ where
         key: &K,
         dst_id: &PixAddressId,
         dst: K::Public,
-        additional_dst_data: Option<Self::DepositData>,
+        additional_dst_data: Self::PoolDepositData,
         amount: Option<HoprBalance>,
     ) -> Result<Self::Receipt, Self::Error>;
 
@@ -159,7 +169,7 @@ where
         keys: &[(PixAddressId, K)],
         dst_id: &PixAddressId,
         dst: K::Public,
-        additional_dst_data: Option<Self::DepositData>,
+        additional_dst_data: Self::PoolDepositData,
     ) -> Result<BatchOutcomes<Self::Receipt, Self::Error>, Self::Error> {
         let futures = keys.iter().map(|(id, key)| {
             let dst = dst.clone();
@@ -190,6 +200,28 @@ mod tests {
     #[error("mock pool failure")]
     struct MockError;
 
+    /// The mock's pool-native deposit data, fallibly convertible both ways as the trait requires.
+    /// Wrapping [`PixDepositData`] keeps the conversions total, so a test never fails for a reason
+    /// unrelated to what it asserts.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct MockDepositData(PixDepositData);
+
+    impl TryFrom<PixDepositData> for MockDepositData {
+        type Error = MockError;
+
+        fn try_from(value: PixDepositData) -> Result<Self, Self::Error> {
+            Ok(Self(value))
+        }
+    }
+
+    impl TryFrom<MockDepositData> for PixDepositData {
+        type Error = MockError;
+
+        fn try_from(value: MockDepositData) -> Result<Self, Self::Error> {
+            Ok(value.0)
+        }
+    }
+
     /// A pool that fails for a chosen set of destinations and succeeds for the rest, so a batch
     /// can be made to partially fail. The receipt is the amount, which makes it visible whether a
     /// receipt was paired with the right element.
@@ -214,16 +246,20 @@ mod tests {
 
     #[async_trait::async_trait]
     impl DepositPool<BjjKeypair> for MockPool {
-        type DepositData = ();
         type Error = MockError;
+        type PoolDepositData = MockDepositData;
         type Receipt = HoprBalance;
+
+        async fn generate_deposit_data(&self, id: &PixAddressId) -> Result<Self::PoolDepositData, Self::Error> {
+            Ok(deposit_data_for(*id))
+        }
 
         async fn deposit_funds_to(
             &self,
             id: &PixAddressId,
             dst: &BjjPublicKey,
             amount: HoprBalance,
-            _additional_data: Option<Self::DepositData>,
+            _additional_data: Self::PoolDepositData,
         ) -> Result<Self::Receipt, Self::Error> {
             self.seen.lock().unwrap().push(*id);
             if self.would_fail(dst) {
@@ -263,7 +299,7 @@ mod tests {
             key: &BjjKeypair,
             _dst_id: &PixAddressId,
             _dst: BjjPublicKey,
-            _additional_dst_data: Option<Self::DepositData>,
+            _additional_dst_data: Self::PoolDepositData,
             _amount: Option<HoprBalance>,
         ) -> Result<Self::Receipt, Self::Error> {
             self.seen.lock().unwrap().push(*src_id);
@@ -284,6 +320,19 @@ mod tests {
         PixAddressId::try_from(&bytes[..]).expect("must be a valid allocation id")
     }
 
+    /// Deposit data for the allocation `id`, carrying no pool-specific payload.
+    fn deposit_data_for(id: PixAddressId) -> MockDepositData {
+        MockDepositData(PixDepositData {
+            id,
+            data: Box::default(),
+        })
+    }
+
+    /// Shorthand for the deposit data of allocation `n`.
+    fn data(n: u8) -> MockDepositData {
+        deposit_data_for(id(n))
+    }
+
     /// The point of the per-item result: one failure must not take the successful receipts with it.
     ///
     /// The previous signature returned `Result<Vec<Receipt>, Error>` and the default implementation
@@ -297,9 +346,9 @@ mod tests {
 
         let (first, third) = (BjjKeypair::random(), BjjKeypair::random());
         let deposits = [
-            (id(1), *first.public(), HoprBalance::new_base(10), None),
-            (id(2), *doomed.public(), HoprBalance::new_base(20), None),
-            (id(3), *third.public(), HoprBalance::new_base(30), None),
+            (id(1), *first.public(), HoprBalance::new_base(10), data(1)),
+            (id(2), *doomed.public(), HoprBalance::new_base(20), data(2)),
+            (id(3), *third.public(), HoprBalance::new_base(30), data(3)),
         ];
 
         let results = pool
@@ -329,8 +378,13 @@ mod tests {
         let doomed = BjjKeypair::random();
         let pool = MockPool::fails_for(doomed.public());
         let deposits = [
-            (id(1), *doomed.public(), HoprBalance::new_base(10), None),
-            (id(2), *BjjKeypair::random().public(), HoprBalance::new_base(20), None),
+            (id(1), *doomed.public(), HoprBalance::new_base(10), data(1)),
+            (
+                id(2),
+                *BjjKeypair::random().public(),
+                HoprBalance::new_base(20),
+                data(2),
+            ),
         ];
 
         let results = pool.deposit_funds_to_multiple(&deposits).await.expect("attempted");
@@ -373,7 +427,7 @@ mod tests {
         let dst_id = id(9);
 
         let results = pool
-            .pool_transfer_multiple(&keys, &dst_id, *BjjKeypair::random().public(), None)
+            .pool_transfer_multiple(&keys, &dst_id, *BjjKeypair::random().public(), deposit_data_for(dst_id))
             .await
             .expect("attempted");
 
@@ -398,23 +452,27 @@ mod tests {
 
         #[async_trait::async_trait]
         impl DepositPool<BjjKeypair> for ReorderingPool {
-            type DepositData = ();
             type Error = MockError;
+            type PoolDepositData = MockDepositData;
             type Receipt = HoprBalance;
+
+            async fn generate_deposit_data(&self, id: &PixAddressId) -> Result<Self::PoolDepositData, Self::Error> {
+                Ok(deposit_data_for(*id))
+            }
 
             async fn deposit_funds_to(
                 &self,
                 _id: &PixAddressId,
                 _dst: &BjjPublicKey,
                 amount: HoprBalance,
-                _additional_data: Option<Self::DepositData>,
+                _additional_data: Self::PoolDepositData,
             ) -> Result<Self::Receipt, Self::Error> {
                 Ok(amount)
             }
 
             async fn deposit_funds_to_multiple(
                 &self,
-                deposits: &[(PixAddressId, BjjPublicKey, HoprBalance, Option<Self::DepositData>)],
+                deposits: &[(PixAddressId, BjjPublicKey, HoprBalance, Self::PoolDepositData)],
             ) -> Result<BatchOutcomes<Self::Receipt, Self::Error>, Self::Error> {
                 // Reversed, and the first input is omitted as if it had never been attempted.
                 Ok(deposits
@@ -450,7 +508,7 @@ mod tests {
                 _key: &BjjKeypair,
                 _dst_id: &PixAddressId,
                 _dst: BjjPublicKey,
-                _additional_dst_data: Option<Self::DepositData>,
+                _additional_dst_data: Self::PoolDepositData,
                 _amount: Option<HoprBalance>,
             ) -> Result<Self::Receipt, Self::Error> {
                 Err(MockError)
@@ -458,9 +516,24 @@ mod tests {
         }
 
         let deposits = [
-            (id(1), *BjjKeypair::random().public(), HoprBalance::new_base(10), None),
-            (id(2), *BjjKeypair::random().public(), HoprBalance::new_base(20), None),
-            (id(3), *BjjKeypair::random().public(), HoprBalance::new_base(30), None),
+            (
+                id(1),
+                *BjjKeypair::random().public(),
+                HoprBalance::new_base(10),
+                data(1),
+            ),
+            (
+                id(2),
+                *BjjKeypair::random().public(),
+                HoprBalance::new_base(20),
+                data(2),
+            ),
+            (
+                id(3),
+                *BjjKeypair::random().public(),
+                HoprBalance::new_base(30),
+                data(3),
+            ),
         ];
 
         let by_allocation: std::collections::BTreeMap<_, _> = ReorderingPool
