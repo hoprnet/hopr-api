@@ -97,6 +97,12 @@ rstest = "0.26.1"
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 
+[package.metadata.cargo-machete]
+ignored = ["serde_bytes"]
+
+[package.metadata.cargo-shear]
+ignored = ["serde_bytes"]
+
 [workspace]
 
 [profile.dev]
