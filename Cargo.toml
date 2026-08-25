@@ -45,6 +45,7 @@ node-session-client = ["node"]
 node-session-server = ["node", "hopr-types/network"]
 serde = ["hopr-types/serde", "dep:serde"]
 tickets = ["chain", "dep:auto_impl"]
+types-curvy = ["hopr-types/curvy"]
 types-random = ["hopr-types/random"]
 types-fixed-rng = ["hopr-types/fixed-rng"]
 types-chain = ["hopr-types/chain"]
@@ -80,7 +81,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "lukas/slim-curvy-pix-types", features = [
+hopr-types = { version = "3.0.0", features = [
   "crypto",
   "internal",
   "primitive",
