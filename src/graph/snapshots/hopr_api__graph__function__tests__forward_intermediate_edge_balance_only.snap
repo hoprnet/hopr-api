@@ -1,0 +1,14 @@
+---
+source: src/graph/function.rs
+expression: "ValueResult\n{\n    direction, path_length, path_index, observations, initial_value,\n    result_value,\n}"
+---
+direction: forward
+path_length: 3
+path_index: 1
+observations:
+  immediate: ~
+  intermediate:
+    balance: "1000"
+    score: ~
+initial_value: 1
+result_value: 0.5

@@ -1,0 +1,17 @@
+---
+source: src/graph/function.rs
+expression: "ValueResult\n{\n    direction, path_length, path_index, observations, initial_value,\n    result_value,\n}"
+---
+direction: forward
+path_length: 3
+path_index: 0
+observations:
+  immediate:
+    connected: true
+    score: 0.95
+    ack_rate: 0.9
+  intermediate:
+    balance: "1000"
+    score: 0.95
+initial_value: 2
+result_value: 1.71

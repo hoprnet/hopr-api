@@ -1,16 +1,48 @@
 use std::sync::Arc;
 
 use super::traits::{
-    EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeNetworkObservableRead, EdgeObservableRead,
+    Balance, EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeNetworkObservableRead, EdgeObservableRead,
     EdgeProtocolObservable, ValueFn,
 };
 
 /// A shared value function accepting `(current_value, edge_weight, path_index) -> new_value`.
 pub type BasicValueFn<C, W> = Arc<dyn Fn(C, &W, usize) -> C + Send + Sync>;
 
-/// Scales value by score when probes exist, otherwise applies the penalizing multiplier.
-fn score_or_penalize(cost: f64, score: f64, penalty: f64) -> f64 {
-    if score > 0.0 { cost * score } else { cost * penalty }
+/// Floor applied to a measured-dead stream, i.e. one scoring `Some(0.0)`.
+///
+/// Kept strictly positive, not to outrank degraded edges — no fixed constant can, since scores decay
+/// arbitrarily close to zero — but because zero costs harm twice: an all-zero candidate set yields no
+/// route at all, and a non-positive cost is pruned. Probe generation shares these value functions, so
+/// a pruned edge stops being probed and can never recover, which RFC-0010 §4.2.3 forbids.
+const MEASURED_DEAD_FLOOR: f64 = 1e-9;
+
+/// Multiple of the bare-minimum balance an edge must hold to be selected.
+///
+/// Requiring exactly the ticket value flaps: the balance is indexed from chain, so it lags
+/// redemptions, and probabilistic wins make it fall in jumps rather than smoothly.
+pub const MIN_BALANCE_HEADROOM: u64 = 2;
+
+/// Face value assumed when a caller supplies none.
+///
+/// One base unit per single-hop ticket, i.e. the balance is taken to be counted in tickets already.
+/// Callers that know the live value — recomputed from the ticket price and winning probability
+/// whenever either changes — pass it explicitly; those that do not, such as probe path generation,
+/// get a neutral comparison against the remaining hop count.
+pub fn default_ticket_face_value() -> Balance {
+    Balance::one()
+}
+
+/// Scales value by score: `None` (unobserved) applies `penalty`; `Some(s)` scales by `s`, floored at
+/// [`MEASURED_DEAD_FLOOR`].
+fn score_or_penalize(cost: f64, score: Option<f64>, penalty: f64) -> f64 {
+    // Both branches are floored. `penalty` is caller-supplied and clamped to `[0.0, 1.0]`, so a
+    // configured `0.0` would drive the cost to zero and prune the edge — the same outcome the floor
+    // exists to prevent, reachable by configuration alone.
+    let multiplier = match score {
+        None => penalty,
+        Some(score) => score,
+    };
+    cost * multiplier.max(MEASURED_DEAD_FLOOR)
 }
 
 /// Applies the ack rate as a value modifier for immediate edges.
@@ -26,10 +58,51 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
     }
 }
 
-/// Checks for intermediate capacity and applies score-or-penalize, rejecting if absent.
-fn require_capacity<W: EdgeObservableRead>(observation: &W, cost: f64, penalty: f64) -> f64 {
+/// Whether a channel's balance can fund the ticket an edge at this position must issue.
+///
+/// A relayer with `remaining_hops` hops after it issues a ticket worth that many times the face
+/// value, plus [`MIN_BALANCE_HEADROOM`]. Face value is network-wide — identical for every channel —
+/// but time-varying, so it is supplied per evaluation rather than stored on the edge; see
+/// [`Balance`](super::traits::Balance).
+///
+/// The face value is already resolved by the caller — the constructors substitute
+/// [`default_ticket_face_value`] when none was supplied, so this sees a concrete figure. A zero face value prices
+/// relaying at nothing, so any channel funds any hop — but one must still exist, since the relayer issues a
+/// (zero-value) ticket on it. That is a supported network-wide mode, not a producer error; it waives
+/// [`MIN_BALANCE_HEADROOM`] for every edge at once, leaving the probe scores as the only thing separating relays.
+///
+/// `remaining_hops == 0` is the final hop: zero-value ticket, no channel needed. A `None` balance is
+/// unknown, which is not evidence of sufficiency.
+fn balance_suffices(balance: Option<Balance>, remaining_hops: usize, ticket_face_value: Balance) -> bool {
+    if remaining_hops == 0 {
+        return true;
+    }
+
+    if ticket_face_value.is_zero() {
+        return balance.is_some();
+    }
+
+    balance.is_some_and(|balance| {
+        Balance::from(remaining_hops as u64)
+            .checked_mul(ticket_face_value)
+            .and_then(|required| required.checked_mul(Balance::from(MIN_BALANCE_HEADROOM)))
+            .is_some_and(|required| balance >= required)
+    })
+}
+
+/// Rejects the edge unless its channel can fund this hop, else applies score-or-penalize.
+///
+/// A presence check is not enough: `Some(0)` is a real value for an OPEN but drained channel, whose
+/// relayer cannot re-issue a ticket.
+fn require_funding<W: EdgeObservableRead>(
+    observation: &W,
+    cost: f64,
+    penalty: f64,
+    remaining_hops: usize,
+    ticket_face_value: Balance,
+) -> f64 {
     if let Some(intermediate) = observation.intermediate_qos()
-        && intermediate.capacity().is_some()
+        && balance_suffices(intermediate.balance(), remaining_hops, ticket_face_value)
     {
         return score_or_penalize(cost, intermediate.score(), penalty);
     }
@@ -40,7 +113,7 @@ fn require_capacity<W: EdgeObservableRead>(observation: &W, cost: f64, penalty: 
 /// A graph edge value function implementing a fold over path edges.
 ///
 /// The `penalty` is a penalizing multiplier applied to edges that lack
-/// probe-based quality observations (e.g. only on-chain capacity or only
+/// probe-based quality observations (e.g. only on-chain balance or only
 /// immediate connectivity data). It scales the accumulated value downward,
 /// making unprobed edges less attractive than measured ones while still
 /// allowing path discovery. A value of `1.0` means no penalty; lower
@@ -100,24 +173,34 @@ where
     /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
     /// threshold are rejected.
     ///
-    /// - **First edge**: requires connectivity and intermediate capacity; scores by the better of
-    ///   immediate/intermediate observations, then applies the ack rate modifier.
-    /// - **Last edge**: accepts intermediate capacity or immediate connectivity; penalizes when neither is available
+    /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
+    ///   of the immediate and intermediate observations, then applies the ack rate modifier.
+    /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
     ///   is applied when immediate QoS data is available.
-    /// - **Intermediate edges**: require capacity; penalize when unprobed.
-    pub fn forward(length: std::num::NonZeroUsize, penalty: f64, min_ack_rate: f64) -> Self {
+    /// - **Intermediate edges**: require a funding balance; penalize when unprobed.
+    pub fn forward(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+    ) -> Self {
         let length = length.get();
         let penalty = penalty.clamp(0.0, 1.0);
         let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
+        // Resolved here rather than per edge: the face value is network-wide and fixed for the
+        // lifetime of this function, so the path search should not re-derive it for every edge.
+        let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
         Self {
             initial: 1.0,
             min: Some(0.0),
             value_fn: Arc::new(move |cost: f64, observation: &W, path_index: usize| match path_index {
                 v if v == (length - 1) => {
-                    // Last edge (relay -> dest): accept intermediate capacity or immediate connectivity
+                    // Last edge (relay -> dest): accept an intermediate balance or immediate connectivity.
+                    // No funding requirement here — the final hop's ticket is zero-value, so it
+                    // needs no channel; the balance check only selects which stream to score by.
                     if let Some(intermediate) = observation.intermediate_qos()
-                        && intermediate.capacity().is_some()
+                        && intermediate.balance().is_some()
                     {
                         let base = score_or_penalize(cost, intermediate.score(), penalty);
                         // For direct routes (length == 1) the single edge is also the immediate peer,
@@ -132,7 +215,7 @@ where
 
                     // Fallback: use immediate connectivity score if available
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                     {
                         let base = score_or_penalize(cost, immediate.score(), penalty);
                         // Same as above: enforce ack rate for 1-hop routes
@@ -146,18 +229,18 @@ where
                     cost * penalty
                 }
                 0 => {
-                    // First edge: require connected peer with intermediate capacity
+                    // First edge: require a connected peer whose channel can fund the rest of the path
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                         && let Some(intermediate) = observation.intermediate_qos()
-                        && intermediate.capacity().is_some()
+                        && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                     {
-                        let base = cost * immediate.score().max(intermediate.score());
+                        let base = score_or_penalize(cost, observation.score(), penalty);
                         return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
                     }
                     -cost
                 }
-                _ => require_capacity(observation, cost, penalty),
+                index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
             }),
         }
     }
@@ -176,12 +259,20 @@ where
     /// [`EdgeValueFn::forward`] because the planner lacks intermediate QoS data.
     ///
     /// - **Last edge** (relay -> me): requires immediate connectivity; applies the ack rate modifier.
-    /// - **All other edges**: require intermediate capacity; the `penalty` penalizing multiplier is applied when probe
+    /// - **All other edges**: require a funding balance; the `penalty` penalizing multiplier is applied when probe
     ///   scores are absent.
-    pub fn returning(length: std::num::NonZeroUsize, penalty: f64, min_ack_rate: f64) -> Self {
+    pub fn returning(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+    ) -> Self {
         let length = length.get();
         let penalty = penalty.clamp(0.0, 1.0);
         let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
+        // Resolved here rather than per edge: the face value is network-wide and fixed for the
+        // lifetime of this function, so the path search should not re-derive it for every edge.
+        let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
         Self {
             initial: 1.0,
             min: Some(0.0),
@@ -189,15 +280,15 @@ where
                 v if v == (length - 1) => {
                     // Last edge (relay -> me): require connectivity with immediate score
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                     {
                         let base = score_or_penalize(cost, immediate.score(), penalty);
                         return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
                     }
                     -cost
                 }
-                // First edge and intermediaries share the same capacity requirement
-                _ => require_capacity(observation, cost, penalty),
+                // First edge and intermediaries share the same funding requirement
+                index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
             }),
         }
     }
@@ -212,28 +303,43 @@ where
     /// threshold are rejected.
     ///
     /// - **First edge**: same as [`EdgeValueFn::forward`].
-    /// - **All other edges**: require capacity; the `penalty` penalizing multiplier is applied when probe scores are
-    ///   absent.
-    pub fn forward_without_self_loopback(penalty: f64, min_ack_rate: f64) -> Self {
+    /// - **All other edges**: require a funding balance; the `penalty` penalizing multiplier is applied when probe
+    ///   scores are absent.
+    ///
+    /// `length` counts edges in the **finished** path, including any the caller appends after
+    /// traversal — `h + 1` for a loopback of `h` hops. Needed to size each edge's ticket.
+    pub fn forward_without_self_loopback(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+    ) -> Self {
+        let length = length.get();
         let penalty = penalty.clamp(0.0, 1.0);
         let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
+        // Resolved here rather than per edge: the face value is network-wide and fixed for the
+        // lifetime of this function, so the path search should not re-derive it for every edge.
+        let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
         Self {
             initial: 1.0,
             min: Some(0.0),
             value_fn: Arc::new(move |cost: f64, observation: &W, path_index: usize| match path_index {
                 0 => {
-                    // First edge: require connected peer with intermediate capacity
+                    // First edge: require a connected peer whose channel can fund the rest of the path
                     if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected()
+                        && immediate.is_connected() != Some(false)
                         && let Some(intermediate) = observation.intermediate_qos()
-                        && intermediate.capacity().is_some()
+                        && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                     {
-                        let base = cost * immediate.score().max(intermediate.score());
+                        let base = score_or_penalize(cost, observation.score(), penalty);
                         return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
                     }
                     -cost
                 }
-                _ => require_capacity(observation, cost, penalty),
+                // An index at or past `length` means the caller understated it. Reject, rather than
+                // let the subtraction collapse to zero remaining hops and waive funding entirely.
+                index if index >= length => -cost,
+                index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
             }),
         }
     }
@@ -251,6 +357,7 @@ pub type ForwardWithoutSelfLoopbackValueFn<C, W> = EdgeValueFn<C, W>;
 #[cfg(test)]
 mod tests {
     use anyhow::Context;
+    use rstest::rstest;
 
     use super::*;
     use crate::graph::traits::{
@@ -260,19 +367,26 @@ mod tests {
 
     const TEST_PENALTY: f64 = 0.5;
     const TEST_MIN_ACK_RATE: f64 = 0.1;
+    /// Probe score well clear of every threshold under test.
+    const GOOD_SCORE: f64 = 0.95;
+    /// Ack rate comfortably above [`TEST_MIN_ACK_RATE`].
+    const GOOD_ACK: f64 = 0.9;
+    /// Balance that funds any path length used here.
+    const FUNDED: u64 = 1_000;
 
-    // ── Serializable stub types (pure value holders) ─────────────────────
+    // ── Stubs ───────────────────────────────────────────────────────────
 
     /// Stub for immediate (1-hop) probe measurement.
     #[derive(Debug, Default, Clone, serde::Serialize)]
     struct StubImmediate {
-        connected: bool,
-        score: f64,
+        connected: Option<bool>,
+        /// `None` models a stream with no observations; `Some(0.0)` one measured and found dead.
+        score: Option<f64>,
         ack_rate: Option<f64>,
     }
 
     impl EdgeNetworkObservableRead for StubImmediate {
-        fn is_connected(&self) -> bool {
+        fn is_connected(&self) -> Option<bool> {
             self.connected
         }
     }
@@ -292,25 +406,39 @@ mod tests {
             unreachable!("not used in value function tests")
         }
 
-        fn average_probe_rate(&self) -> f64 {
+        fn average_probe_rate(&self) -> Option<f64> {
             unreachable!("not used in value function tests")
         }
 
-        fn score(&self) -> f64 {
+        fn has_observations(&self) -> bool {
+            self.score.is_some()
+        }
+
+        fn score(&self) -> Option<f64> {
             self.score
         }
     }
 
-    /// Stub for intermediate (relayed) probe measurement with capacity.
+    /// Renders a `U256` balance as a plain decimal string so snapshots stay readable.
+    fn serialize_balance<S: serde::Serializer>(balance: &Option<Balance>, s: S) -> Result<S::Ok, S::Error> {
+        match balance {
+            Some(balance) => s.serialize_str(&balance.to_string()),
+            None => s.serialize_none(),
+        }
+    }
+
+    /// Stub for intermediate (relayed) probe measurement with channel balance.
     #[derive(Debug, Default, Clone, serde::Serialize)]
     struct StubIntermediate {
-        capacity: Option<u128>,
-        score: f64,
+        #[serde(serialize_with = "serialize_balance")]
+        balance: Option<Balance>,
+        /// `None` models a stream with no observations; `Some(0.0)` one measured and found dead.
+        score: Option<f64>,
     }
 
     impl EdgeProtocolObservable for StubIntermediate {
-        fn capacity(&self) -> Option<u128> {
-            self.capacity
+        fn balance(&self) -> Option<Balance> {
+            self.balance
         }
     }
 
@@ -323,16 +451,20 @@ mod tests {
             unreachable!("not used in value function tests")
         }
 
-        fn average_probe_rate(&self) -> f64 {
+        fn average_probe_rate(&self) -> Option<f64> {
             unreachable!("not used in value function tests")
         }
 
-        fn score(&self) -> f64 {
+        fn has_observations(&self) -> bool {
+            self.score.is_some()
+        }
+
+        fn score(&self) -> Option<f64> {
             self.score
         }
     }
 
-    /// Stub `Observations` type: a serializable value holder for test fixtures.
+    /// Stub `Observations`: a serializable holder for the two measurement streams.
     #[derive(Debug, Default, Clone, serde::Serialize)]
     struct Observations {
         immediate: Option<StubImmediate>,
@@ -355,1280 +487,778 @@ mod tests {
             self.intermediate.as_ref()
         }
 
-        fn score(&self) -> f64 {
-            self.intermediate
-                .as_ref()
-                .map(|i| i.score)
-                .or_else(|| self.immediate.as_ref().map(|i| i.score))
-                .unwrap_or(0.0)
+        fn score(&self) -> Option<f64> {
+            let immediate = self.immediate.as_ref().and_then(|i| i.score);
+            let intermediate = self.intermediate.as_ref().and_then(|i| i.score);
+            match (immediate, intermediate) {
+                (Some(immediate), Some(intermediate)) => Some((immediate + intermediate) / 2.0),
+                (Some(only), None) | (None, Some(only)) => Some(only),
+                (None, None) => None,
+            }
         }
     }
 
-    // ── Test observation builders ───────────────────────────────────────
+    impl Observations {
+        /// Attaches a *connected* immediate stream.
+        fn with_immediate(mut self, score: Option<f64>, ack_rate: Option<f64>) -> Self {
+            self.immediate = Some(StubImmediate {
+                connected: Some(true),
+                score,
+                ack_rate,
+            });
+            self
+        }
 
-    /// Connected peer with good QoS scores and channel capacity.
-    fn with_connected_and_capacity() -> Observations {
-        Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.9),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
+        /// Attaches an intermediate stream over a channel holding `balance`.
+        fn with_intermediate(mut self, balance: Option<u64>, score: Option<f64>) -> Self {
+            self.intermediate = Some(StubIntermediate {
+                balance: balance.map(Balance::from),
+                score,
+            });
+            self
         }
     }
 
-    /// Connected peer with only immediate (1-hop) data, no intermediate.
-    fn with_connected_only_immediate() -> Observations {
-        Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.9),
-            }),
-            intermediate: None,
-        }
+    // ── Fixtures ────────────────────────────────────────────────────────
+
+    /// Connected, healthy on both streams, channel funded.
+    fn healthy() -> Observations {
+        Observations::default()
+            .with_immediate(Some(GOOD_SCORE), Some(GOOD_ACK))
+            .with_intermediate(Some(FUNDED), Some(GOOD_SCORE))
     }
 
-    /// Not connected, but has intermediate QoS + channel capacity.
-    fn with_not_connected_and_intermediate() -> Observations {
-        Observations {
-            immediate: None,
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        }
+    /// Connected and healthy, but never reached by a loopback probe.
+    fn immediate_only() -> Observations {
+        Observations::default().with_immediate(Some(GOOD_SCORE), Some(GOOD_ACK))
     }
 
-    /// No data at all.
-    fn with_empty() -> Observations {
+    /// Relayed observations over a funded channel, with no direct connection.
+    fn relayed_only() -> Observations {
+        Observations::default().with_intermediate(Some(FUNDED), Some(GOOD_SCORE))
+    }
+
+    /// A funded channel and nothing probed yet.
+    fn balance_only() -> Observations {
+        Observations::default().with_intermediate(Some(FUNDED), None)
+    }
+
+    /// Healthy and probed, but no channel is known.
+    fn unfunded() -> Observations {
+        Observations::default().with_intermediate(None, Some(GOOD_SCORE))
+    }
+
+    /// No streams at all.
+    fn unobserved() -> Observations {
         Observations::default()
     }
 
-    /// Only on-chain channel capacity, no probes run yet.
-    fn with_capacity_only() -> Observations {
-        Observations {
-            immediate: None,
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.0,
-            }),
+    /// Healthy over a funded channel, with the given ack rate.
+    fn acking(ack_rate: Option<f64>) -> Observations {
+        healthy().with_immediate(Some(GOOD_SCORE), ack_rate)
+    }
+
+    /// Healthy on the wire, but measured and found dead when relaying.
+    fn dead_intermediate() -> Observations {
+        healthy().with_intermediate(Some(FUNDED), Some(0.0))
+    }
+
+    /// Fully connected and probed, over a channel holding exactly `balance`.
+    fn funded_with(balance: u64) -> Observations {
+        healthy().with_intermediate(Some(balance), Some(GOOD_SCORE))
+    }
+
+    /// A funded channel whose immediate stream exists but never observed connectivity.
+    ///
+    /// Reachable because the immediate stream is also created by traffic-derived updates, which
+    /// carry no connectivity evidence.
+    fn connectivity_unknown() -> Observations {
+        let mut obs = Observations::default().with_intermediate(Some(FUNDED), None);
+        obs.immediate = Some(StubImmediate {
+            connected: None,
+            score: None,
+            ack_rate: None,
+        });
+        obs
+    }
+
+    /// The same edge, but connectivity was checked and found down.
+    fn connectivity_down() -> Observations {
+        let mut obs = connectivity_unknown();
+        obs.immediate = obs.immediate.map(|imm| StubImmediate {
+            connected: Some(false),
+            ..imm
+        });
+        obs
+    }
+
+    // ── Harness ─────────────────────────────────────────────────────────
+
+    /// Which constructor is under test, recorded in snapshots so a case is self-describing.
+    #[derive(Debug, Clone, Copy, serde::Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum Direction {
+        Forward,
+        Returning,
+        ForwardWithoutSelfLoopback,
+    }
+
+    impl Direction {
+        fn build(
+            self,
+            length: usize,
+            ticket_face_value: Option<Balance>,
+        ) -> anyhow::Result<EdgeValueFn<f64, Observations>> {
+            let length = std::num::NonZeroUsize::new(length).context("path length must be non-zero")?;
+            Ok(match self {
+                Self::Forward => EdgeValueFn::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE, ticket_face_value),
+                Self::Returning => EdgeValueFn::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE, ticket_face_value),
+                Self::ForwardWithoutSelfLoopback => EdgeValueFn::forward_without_self_loopback(
+                    length,
+                    TEST_PENALTY,
+                    TEST_MIN_ACK_RATE,
+                    ticket_face_value,
+                ),
+            })
         }
     }
 
-    // ── Snapshot helper ─────────────────────────────────────────────────
-
-    /// Captures the full value function evaluation context for snapshot testing.
+    /// Full evaluation context, so a snapshot is readable without its source.
     #[derive(serde::Serialize)]
     struct ValueResult {
+        direction: Direction,
+        path_length: usize,
+        path_index: usize,
         observations: Observations,
         initial_value: f64,
-        path_index: usize,
         result_value: f64,
     }
 
-    // ── Forward value function trait method tests ─────────────────────────
-
-    #[test]
-    fn forward_value_fn_invariants() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
+    /// Evaluates one edge and snapshots the whole context under an explicit `case` name.
+    ///
+    /// The name is explicit because `rstest` would otherwise leave `insta` deriving it from the
+    /// generated `case_<n>_<label>`, which renumbers whenever a case is inserted.
+    fn assert_edge_value(
+        case: &str,
+        direction: Direction,
+        path_length: usize,
+        path_index: usize,
+        initial_value: f64,
+        observations: Observations,
+    ) -> anyhow::Result<()> {
+        let result_value =
+            direction.build(path_length, None)?.into_value_fn()(initial_value, &observations, path_index);
+        insta::assert_yaml_snapshot!(
+            case,
+            ValueResult {
+                direction,
+                path_length,
+                path_index,
+                observations,
+                initial_value,
+                result_value,
+            }
         );
-        #[derive(serde::Serialize)]
-        struct Invariants {
-            initial_value: f64,
-            min_value: Option<f64>,
-        }
-        insta::assert_yaml_snapshot!(Invariants {
-            initial_value: value_fn.initial_value(),
-            min_value: value_fn.min_value(),
-        });
         Ok(())
     }
 
-    // ── Forward first edge (path_index == 0) ────────────────────────────
-
-    #[test]
-    fn forward_first_edge_positive_when_connected_with_capacity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
+    /// Evaluates one edge from a unit incoming value, for ordering assertions.
+    fn edge_value(
+        direction: Direction,
+        path_length: usize,
+        path_index: usize,
+        observations: &Observations,
+    ) -> anyhow::Result<f64> {
+        Ok(direction.build(path_length, None)?.into_value_fn()(
+            1.0,
+            observations,
+            path_index,
+        ))
     }
 
-    #[test]
-    fn forward_first_edge_scales_by_immediate_score() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(2.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 2.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_first_edge_positive_when_capacity_only_no_intermediate_probe() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.9),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.0,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_first_edge_negative_when_not_connected() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_not_connected_and_intermediate();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_first_edge_negative_when_connected_but_no_intermediate() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_only_immediate();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_first_edge_negative_when_connected_intermediate_but_no_capacity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.9),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: None,
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_first_edge_negative_when_empty() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_empty();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    // ── Forward last edge (path_index == length - 1) ────────────────────
-
-    #[test]
-    fn forward_last_edge_positive_when_capacity_and_score() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 2,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_last_edge_positive_with_capacity_only_no_probes() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_capacity_only();
-
-        let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 2,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_last_edge_positive_without_connectivity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_not_connected_and_intermediate();
-
-        let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 2,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_last_edge_positive_with_connectivity_no_capacity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_only_immediate();
-
-        let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 2,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_last_edge_scales_by_intermediate_score() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(2.0, &obs, 2);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 2.0,
-            path_index: 2,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_last_edge_positive_when_intermediate_but_no_capacity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: None,
-            intermediate: Some(StubIntermediate {
-                capacity: None,
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 2,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_last_edge_positive_when_empty() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_empty();
-
-        let cost = f(1.0, &obs, 2);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 2,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    // ── Forward intermediate edges (0 < path_index < length - 1) ────────
-
-    #[test]
-    fn forward_intermediate_edge_positive_when_capacity_and_score() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_intermediate_edge_scales_by_intermediate_score() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(2.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 2.0,
-            path_index: 1,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_intermediate_edge_negative_when_no_intermediate() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_only_immediate();
-
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_intermediate_edge_negative_when_no_capacity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: None,
-            intermediate: Some(StubIntermediate {
-                capacity: None,
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_intermediate_edge_positive_when_capacity_only_no_probes() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_capacity_only();
-
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_intermediate_edge_negative_when_empty() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_empty();
-
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_intermediate_edge_uses_observations() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-
-        let cost_empty = f(1.0, &with_empty(), 1);
-        let cost_full = f(1.0, &with_connected_and_capacity(), 1);
-        assert_ne!(cost_empty, cost_full, "intermediate edges should use observations");
-        Ok(())
-    }
-
-    // ── Forward length boundary tests ───────────────────────────────────
-
-    #[test]
-    fn forward_length_one_has_only_first_and_last_edge() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(1).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_length_one_rejected_when_ack_rate_below_threshold() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(1).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.05),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_length_two_intermediate_at_index_one() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-
-        let obs_e = with_empty();
-        let cost_empty = f(1.0, &obs_e, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs_e,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost_empty
-        });
-        Ok(())
-    }
-
-    // ── Forward negative initial value propagation ───────────────────────
-
-    #[test]
-    fn forward_negative_initial_value_inverts_rejection() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_empty();
-
-        let cost = f(-1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: -1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    // ── Return value function trait method tests ──────────────────────────
-
-    #[test]
-    fn return_value_fn_invariants() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        #[derive(serde::Serialize)]
-        struct Invariants {
-            initial_value: f64,
-            min_value: Option<f64>,
-        }
-        insta::assert_yaml_snapshot!(Invariants {
-            initial_value: value_fn.initial_value(),
-            min_value: value_fn.min_value(),
-        });
-        Ok(())
-    }
-
-    // ── Return first edge (path_index == 0) ─────────────────────────────
-
-    #[test]
-    fn return_first_edge_positive_with_intermediate_and_capacity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_not_connected_and_intermediate();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn return_first_edge_positive_with_full_data() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_and_capacity();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn return_first_edge_scales_by_intermediate_score() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_not_connected_and_intermediate();
-
-        let cost = f(2.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 2.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn return_first_edge_does_not_require_connectivity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_not_connected_and_intermediate();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn return_first_edge_positive_when_capacity_only_no_probes() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_capacity_only();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn return_first_edge_negative_when_no_capacity() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_connected_only_immediate();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn return_first_edge_negative_when_empty() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_empty();
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    // ── Return last edge ────────────────────────────────────────────────
-
-    #[test]
-    fn return_last_edge_requires_connectivity() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let ret = EdgeValueFn::<_, Observations>::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let ret_fn = ret.into_value_fn();
-
-        let obs_conn = with_connected_and_capacity();
-        let cost_connected = ret_fn(1.0, &obs_conn, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs_conn,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost_connected
-        });
-
-        let obs_no_conn = with_not_connected_and_intermediate();
-        let cost_not_connected = ret_fn(1.0, &obs_no_conn, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs_no_conn,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost_not_connected
-        });
-
-        Ok(())
-    }
-
-    #[test]
-    fn return_last_edge_positive_when_connected_with_empty_intermediate() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let ret = EdgeValueFn::<_, Observations>::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let ret_fn = ret.into_value_fn();
-
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.9),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: None,
-                score: 0.0,
-            }),
-        };
-
-        let cost = ret_fn(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-
-        Ok(())
-    }
-
-    #[test]
-    fn return_last_edge_penalized_when_connected_but_zero_score() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let ret = EdgeValueFn::<_, Observations>::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let ret_fn = ret.into_value_fn();
-
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.0,
-                ack_rate: Some(0.9),
-            }),
-            intermediate: None,
-        };
-
-        let cost = ret_fn(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-
-        Ok(())
-    }
-
-    #[test]
-    fn forward_last_edge_differs_from_return_last_edge() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-
-        let fwd = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let ret = EdgeValueFn::<_, Observations>::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let fwd_fn = fwd.into_value_fn();
-        let ret_fn = ret.into_value_fn();
-
-        let obs = with_not_connected_and_intermediate();
-        let fwd_cost = fwd_fn(1.0, &obs, 1);
-        let ret_cost = ret_fn(1.0, &obs, 1);
-
-        #[derive(serde::Serialize)]
-        struct Comparison {
-            observations: Observations,
-            forward_last_edge_value: f64,
-            return_last_edge_value: f64,
-        }
-
-        insta::assert_yaml_snapshot!(Comparison {
-            observations: obs,
-            forward_last_edge_value: fwd_cost,
-            return_last_edge_value: ret_cost,
-        });
-
-        Ok(())
-    }
-
-    // ── Return intermediate edge ────────────────────────────────────────
-
-    #[test]
-    fn return_intermediate_edge_positive_when_capacity_only_no_probes() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = with_capacity_only();
-
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn return_intermediate_edge_same_as_forward() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(3).context("should be non-zero")?;
-
-        let fwd = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let ret = EdgeValueFn::<_, Observations>::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let fwd_fn = fwd.into_value_fn();
-        let ret_fn = ret.into_value_fn();
-
-        let obs = with_connected_and_capacity();
-        let fwd_cost = fwd_fn(1.0, &obs, 1);
-        let ret_cost = ret_fn(1.0, &obs, 1);
-
+    // ── Fold invariants ─────────────────────────────────────────────────
+
+    #[rstest]
+    #[case::forward(Direction::Forward)]
+    #[case::returning(Direction::Returning)]
+    #[case::forward_without_self_loopback(Direction::ForwardWithoutSelfLoopback)]
+    fn value_fn_should_start_at_the_multiplicative_identity_and_floor_at_zero(
+        #[case] direction: Direction,
+    ) -> anyhow::Result<()> {
+        let value_fn = direction.build(3, None)?;
         assert_eq!(
-            fwd_cost, ret_cost,
-            "return intermediate edge should behave identically to forward intermediate edge"
+            value_fn.initial_value(),
+            1.0,
+            "a product fold must start at the multiplicative identity"
         );
-
+        assert_eq!(
+            value_fn.min_value(),
+            Some(0.0),
+            "a non-positive fold result must prune the path"
+        );
         Ok(())
     }
 
-    // ── Symmetrical communication tests ─────────────────────────────────
+    // ── Forward edge valuation ──────────────────────────────────────────
 
-    #[test]
-    fn symmetrical_forward_without_self_loopback_works_with_forward_value_fn() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let value_fn = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let f = value_fn.into_value_fn();
+    #[rstest]
+    // First edge (index 0): needs connectivity plus a balance funding the remaining hops.
+    #[case::forward_first_edge_healthy("forward_first_edge_healthy", 3, 0, 1.0, healthy())]
+    #[case::forward_first_edge_scales_with_the_incoming_value(
+        "forward_first_edge_scales_with_the_incoming_value",
+        3,
+        0,
+        2.0,
+        healthy()
+    )]
+    #[case::forward_first_edge_dead_intermediate_is_not_masked(
+        "forward_first_edge_dead_intermediate_is_not_masked",
+        3,
+        0,
+        1.0,
+        dead_intermediate()
+    )]
+    #[case::forward_first_edge_not_connected("forward_first_edge_not_connected", 3, 0, 1.0, relayed_only())]
+    #[case::forward_first_edge_no_intermediate_stream(
+        "forward_first_edge_no_intermediate_stream",
+        3,
+        0,
+        1.0,
+        immediate_only()
+    )]
+    #[case::forward_first_edge_unknown_balance("forward_first_edge_unknown_balance", 3, 0, 1.0, healthy().with_intermediate(None, Some(GOOD_SCORE)))]
+    #[case::forward_first_edge_unobserved("forward_first_edge_unobserved", 3, 0, 1.0, unobserved())]
+    #[case::forward_first_edge_ack_rate_below_threshold(
+        "forward_first_edge_ack_rate_below_threshold",
+        3,
+        0,
+        1.0,
+        acking(Some(0.05))
+    )]
+    #[case::forward_first_edge_no_ack_data("forward_first_edge_no_ack_data", 3, 0, 1.0, acking(None))]
+    #[case::forward_first_edge_zero_ack_rate("forward_first_edge_zero_ack_rate", 3, 0, 1.0, acking(Some(0.0)))]
+    #[case::forward_first_edge_negative_incoming_value("forward_first_edge_negative_incoming_value", 3, 0, -1.0, unobserved())]
+    // Intermediate edges (0 < index < length - 1): need a funding balance.
+    #[case::forward_intermediate_edge_healthy("forward_intermediate_edge_healthy", 3, 1, 1.0, healthy())]
+    #[case::forward_intermediate_edge_scales_with_the_incoming_value(
+        "forward_intermediate_edge_scales_with_the_incoming_value",
+        3,
+        1,
+        2.0,
+        healthy()
+    )]
+    #[case::forward_intermediate_edge_no_intermediate_stream(
+        "forward_intermediate_edge_no_intermediate_stream",
+        3,
+        1,
+        1.0,
+        immediate_only()
+    )]
+    #[case::forward_intermediate_edge_unknown_balance(
+        "forward_intermediate_edge_unknown_balance",
+        3,
+        1,
+        1.0,
+        unfunded()
+    )]
+    #[case::forward_intermediate_edge_balance_only("forward_intermediate_edge_balance_only", 3, 1, 1.0, balance_only())]
+    #[case::forward_intermediate_edge_unobserved("forward_intermediate_edge_unobserved", 3, 1, 1.0, unobserved())]
+    // Last edge (index == length - 1): not monetized, so it is penalized rather than rejected.
+    #[case::forward_last_edge_healthy("forward_last_edge_healthy", 3, 2, 1.0, healthy())]
+    #[case::forward_last_edge_scales_with_the_incoming_value(
+        "forward_last_edge_scales_with_the_incoming_value",
+        3,
+        2,
+        2.0,
+        healthy()
+    )]
+    #[case::forward_last_edge_balance_only("forward_last_edge_balance_only", 3, 2, 1.0, balance_only())]
+    #[case::forward_last_edge_not_connected("forward_last_edge_not_connected", 3, 2, 1.0, relayed_only())]
+    #[case::forward_last_edge_no_intermediate_stream(
+        "forward_last_edge_no_intermediate_stream",
+        3,
+        2,
+        1.0,
+        immediate_only()
+    )]
+    #[case::forward_last_edge_unknown_balance("forward_last_edge_unknown_balance", 3, 2, 1.0, unfunded())]
+    #[case::forward_last_edge_unobserved("forward_last_edge_unobserved", 3, 2, 1.0, unobserved())]
+    // Length boundaries. At length 1 the single edge is both first and last; at length 2 index 1 is
+    // already the last edge, so no intermediate arm is reachable.
+    #[case::forward_single_edge_is_both_first_and_last(
+        "forward_single_edge_is_both_first_and_last",
+        1,
+        0,
+        1.0,
+        healthy()
+    )]
+    #[case::forward_single_edge_ack_rate_below_threshold(
+        "forward_single_edge_ack_rate_below_threshold",
+        1,
+        0,
+        1.0,
+        acking(Some(0.05))
+    )]
+    #[case::forward_two_edge_last_edge_healthy("forward_two_edge_last_edge_healthy", 2, 1, 1.0, healthy())]
+    #[case::forward_two_edge_last_edge_unobserved("forward_two_edge_last_edge_unobserved", 2, 1, 1.0, unobserved())]
+    fn forward_should_value_an_edge_by_position_and_observations(
+        #[case] case: &str,
+        #[case] path_length: usize,
+        #[case] path_index: usize,
+        #[case] initial_value: f64,
+        #[case] observations: Observations,
+    ) -> anyhow::Result<()> {
+        assert_edge_value(
+            case,
+            Direction::Forward,
+            path_length,
+            path_index,
+            initial_value,
+            observations,
+        )
+    }
 
-        let me_to_relay = with_connected_and_capacity();
-        let relay_to_dest = with_capacity_only();
+    // ── Return-direction edge valuation ─────────────────────────────────
 
-        let cost_after_first = f(1.0, &me_to_relay, 0);
-        let cost_after_last = f(cost_after_first, &relay_to_dest, 1);
+    #[rstest]
+    // First edge (dest -> relay): the planner has no immediate data for it, so connectivity is not
+    // required — only a funding balance.
+    #[case::returning_first_edge_relayed_only("returning_first_edge_relayed_only", 2, 0, 1.0, relayed_only())]
+    #[case::returning_first_edge_healthy("returning_first_edge_healthy", 2, 0, 1.0, healthy())]
+    #[case::returning_first_edge_scales_with_the_incoming_value(
+        "returning_first_edge_scales_with_the_incoming_value",
+        2,
+        0,
+        2.0,
+        relayed_only()
+    )]
+    #[case::returning_first_edge_balance_only("returning_first_edge_balance_only", 2, 0, 1.0, balance_only())]
+    #[case::returning_first_edge_no_intermediate_stream(
+        "returning_first_edge_no_intermediate_stream",
+        2,
+        0,
+        1.0,
+        immediate_only()
+    )]
+    #[case::returning_first_edge_unobserved("returning_first_edge_unobserved", 2, 0, 1.0, unobserved())]
+    // Last edge (relay -> me): requires immediate connectivity and applies the ack rate.
+    #[case::returning_last_edge_connected("returning_last_edge_connected", 2, 1, 1.0, healthy())]
+    #[case::returning_last_edge_not_connected("returning_last_edge_not_connected", 2, 1, 1.0, relayed_only())]
+    #[case::returning_last_edge_connected_over_a_dead_unfunded_intermediate("returning_last_edge_connected_over_a_dead_unfunded_intermediate", 2, 1, 1.0, healthy().with_intermediate(None, Some(0.0)))]
+    #[case::returning_last_edge_measured_dead_immediate("returning_last_edge_measured_dead_immediate", 2, 1, 1.0, Observations::default().with_immediate(Some(0.0), Some(GOOD_ACK)))]
+    #[case::returning_last_edge_ack_rate_below_threshold(
+        "returning_last_edge_ack_rate_below_threshold",
+        2,
+        1,
+        1.0,
+        acking(Some(0.05))
+    )]
+    // Intermediate edges share the first edge's funding requirement.
+    #[case::returning_intermediate_edge_balance_only(
+        "returning_intermediate_edge_balance_only",
+        3,
+        1,
+        1.0,
+        balance_only()
+    )]
+    fn returning_should_value_an_edge_by_position_and_observations(
+        #[case] case: &str,
+        #[case] path_length: usize,
+        #[case] path_index: usize,
+        #[case] initial_value: f64,
+        #[case] observations: Observations,
+    ) -> anyhow::Result<()> {
+        assert_edge_value(
+            case,
+            Direction::Returning,
+            path_length,
+            path_index,
+            initial_value,
+            observations,
+        )
+    }
+
+    #[rstest]
+    #[case::loopback_first_edge_ack_rate_below_threshold(
+        "loopback_first_edge_ack_rate_below_threshold",
+        3,
+        0,
+        1.0,
+        acking(Some(0.05))
+    )]
+    #[case::loopback_first_edge_healthy("loopback_first_edge_healthy", 3, 0, 1.0, healthy())]
+    fn forward_without_self_loopback_should_value_an_edge_by_position_and_observations(
+        #[case] case: &str,
+        #[case] path_length: usize,
+        #[case] path_index: usize,
+        #[case] initial_value: f64,
+        #[case] observations: Observations,
+    ) -> anyhow::Result<()> {
+        assert_edge_value(
+            case,
+            Direction::ForwardWithoutSelfLoopback,
+            path_length,
+            path_index,
+            initial_value,
+            observations,
+        )
+    }
+
+    // ── Whole-path folds ────────────────────────────────────────────────
+
+    #[rstest]
+    #[case::forward_over_a_forward_shaped_path("forward_over_a_forward_shaped_path", Direction::Forward, [healthy(), balance_only()])]
+    #[case::forward_over_a_return_shaped_path("forward_over_a_return_shaped_path", Direction::Forward, [relayed_only(), healthy()])]
+    #[case::returning_over_a_return_shaped_path("returning_over_a_return_shaped_path", Direction::Returning, [relayed_only(), healthy()])]
+    #[case::returning_over_a_funded_path("returning_over_a_funded_path", Direction::Returning, [balance_only(), healthy()])]
+    fn value_fn_should_fold_a_two_edge_path(
+        #[case] case: &str,
+        #[case] direction: Direction,
+        #[case] edges: [Observations; 2],
+    ) -> anyhow::Result<()> {
+        let value_fn = direction.build(2, None)?.into_value_fn();
+        let after_first_edge = value_fn(1.0, &edges[0], 0);
+        let after_last_edge = value_fn(after_first_edge, &edges[1], 1);
 
         #[derive(serde::Serialize)]
         struct PathCost {
+            direction: Direction,
             after_first_edge: f64,
             after_last_edge: f64,
         }
 
-        insta::assert_yaml_snapshot!(PathCost {
-            after_first_edge: cost_after_first,
-            after_last_edge: cost_after_last,
-        });
-
-        Ok(())
-    }
-
-    #[test]
-    fn symmetrical_return_path_rejected_by_forward_value_fn() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let value_fn = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let f = value_fn.into_value_fn();
-
-        let dest_to_relay = with_not_connected_and_intermediate();
-        let relay_to_me = with_connected_and_capacity();
-
-        let cost_after_first = f(1.0, &dest_to_relay, 0);
-        let cost_after_last = f(cost_after_first, &relay_to_me, 1);
-
-        #[derive(serde::Serialize)]
-        struct PathCost {
-            after_first_edge: f64,
-            after_last_edge: f64,
-        }
-
-        insta::assert_yaml_snapshot!(PathCost {
-            after_first_edge: cost_after_first,
-            after_last_edge: cost_after_last,
-        });
-
-        Ok(())
-    }
-
-    #[test]
-    fn symmetrical_return_path_works_with_return_value_fn() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-        let value_fn = EdgeValueFn::<_, Observations>::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let f = value_fn.into_value_fn();
-
-        let dest_to_relay = with_not_connected_and_intermediate();
-        let relay_to_me = with_connected_and_capacity();
-
-        let cost_after_first = f(1.0, &dest_to_relay, 0);
-        let cost_after_last = f(cost_after_first, &relay_to_me, 1);
-
-        #[derive(serde::Serialize)]
-        struct PathCost {
-            after_first_edge: f64,
-            after_last_edge: f64,
-        }
-
-        insta::assert_yaml_snapshot!(PathCost {
-            after_first_edge: cost_after_first,
-            after_last_edge: cost_after_last,
-        });
-
-        Ok(())
-    }
-
-    #[test]
-    fn symmetrical_bidirectional_both_paths_positive() -> anyhow::Result<()> {
-        let length = std::num::NonZeroUsize::new(2).context("should be non-zero")?;
-
-        let fwd = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let fwd_fn = fwd.into_value_fn();
-
-        let me_to_relay = with_connected_and_capacity();
-        let relay_to_dest = with_capacity_only();
-
-        let fwd_cost = fwd_fn(1.0, &me_to_relay, 0);
-        let fwd_cost = fwd_fn(fwd_cost, &relay_to_dest, 1);
-
-        let ret = EdgeValueFn::<_, Observations>::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let ret_fn = ret.into_value_fn();
-
-        let dest_to_relay = with_capacity_only();
-        let relay_to_me = with_connected_and_capacity();
-
-        let ret_cost = ret_fn(1.0, &dest_to_relay, 0);
-        let ret_cost = ret_fn(ret_cost, &relay_to_me, 1);
-
-        #[derive(serde::Serialize)]
-        struct BidirectionalValue {
-            forward_without_self_loopback_value: f64,
-            return_path_value: f64,
-        }
-
-        insta::assert_yaml_snapshot!(BidirectionalValue {
-            forward_without_self_loopback_value: fwd_cost,
-            return_path_value: ret_cost,
-        });
-
-        Ok(())
-    }
-
-    // ── Ack rate value function tests ─────────────────────────────────
-
-    #[test]
-    fn forward_first_edge_rejected_when_ack_rate_below_threshold() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
+        insta::assert_yaml_snapshot!(
+            case,
+            PathCost {
+                direction,
+                after_first_edge,
+                after_last_edge,
+            }
         );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.05),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
         Ok(())
     }
 
     #[test]
-    fn forward_first_edge_penalized_when_no_ack_data() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: None,
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_first_edge_scales_by_ack_rate() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs_high = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.9),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
-        let obs_low = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.3),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
-
-        let cost_high = f(1.0, &obs_high, 0);
-        let cost_low = f(1.0, &obs_low, 0);
+    fn forward_and_returning_should_disagree_on_a_return_shaped_last_edge() -> anyhow::Result<()> {
+        // `forward` scores the last edge off the intermediate balance, so a relay it has never
+        // connected to is still usable. `returning` ends at `me` and therefore demands connectivity.
+        let observations = relayed_only();
+        let forward = edge_value(Direction::Forward, 2, 1, &observations)?;
+        let returning = edge_value(Direction::Returning, 2, 1, &observations)?;
 
         assert!(
-            cost_high > cost_low,
-            "higher ack rate should produce higher value: {cost_high} vs {cost_low}"
+            forward > 0.0,
+            "forward accepts an unconnected final relay, got {forward}"
+        );
+        assert!(
+            returning < 0.0,
+            "returning must reject a final edge it cannot reach directly, got {returning}"
         );
         Ok(())
     }
 
     #[test]
-    fn return_last_edge_rejected_when_ack_rate_below_threshold() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::returning(
-            std::num::NonZeroUsize::new(2).context("should be non-zero")?,
+    fn returning_should_match_forward_on_intermediate_edges() -> anyhow::Result<()> {
+        let observations = healthy();
+        assert_eq!(
+            edge_value(Direction::Forward, 3, 1, &observations)?,
+            edge_value(Direction::Returning, 3, 1, &observations)?,
+            "both directions apply the same funding requirement to intermediate edges"
+        );
+        Ok(())
+    }
+
+    // ── Scoring properties ──────────────────────────────────────────────
+
+    #[test]
+    fn forward_first_edge_should_score_the_aggregate_rather_than_the_better_stream() -> anyhow::Result<()> {
+        // Taking the better of the two streams would hide a dead intermediate entirely, which is
+        // the defect the presence rules exist to close. RFC-0014 §4.2 averages when both are
+        // present. Acks are fully accounted for here so the assertion isolates the aggregate.
+        let masking = dead_intermediate().with_immediate(Some(GOOD_SCORE), Some(1.0));
+        let sound = healthy().with_immediate(Some(GOOD_SCORE), Some(1.0));
+
+        let masked = edge_value(Direction::Forward, 3, 0, &masking)?;
+        let intact = edge_value(Direction::Forward, 3, 0, &sound)?;
+
+        assert!(
+            masked < intact,
+            "a dead intermediate must cost the edge, not be hidden by a healthy immediate: {masked} vs {intact}"
+        );
+        assert!(
+            (masked - (GOOD_SCORE + 0.0) / 2.0).abs() < 1e-9,
+            "expected the documented average, got {masked}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn forward_first_edge_should_ignore_an_allocated_but_empty_intermediate_stream() -> anyhow::Result<()> {
+        // The permanent state of every edge incident to this node: immediate probes observe it,
+        // loopback attribution never targets it, and a balance update allocated the empty
+        // intermediate stream.
+        let both_observed = edge_value(Direction::Forward, 2, 0, &funded_with(FUNDED))?;
+        let intermediate_empty = edge_value(
+            Direction::Forward,
+            2,
+            0,
+            &healthy().with_intermediate(Some(FUNDED), None),
+        )?;
+
+        assert!(
+            (both_observed - intermediate_empty).abs() < 1e-12,
+            "an allocated-but-empty intermediate stream must not change the score: {both_observed} vs \
+             {intermediate_empty}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn forward_first_edge_should_rank_a_higher_ack_rate_higher() -> anyhow::Result<()> {
+        let generous = edge_value(Direction::Forward, 3, 0, &acking(Some(GOOD_ACK)))?;
+        let stingy = edge_value(Direction::Forward, 3, 0, &acking(Some(0.3)))?;
+        assert!(
+            generous > stingy,
+            "a higher ack rate must produce a higher value: {generous} vs {stingy}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn forward_intermediate_edge_should_depend_on_its_observations() -> anyhow::Result<()> {
+        assert_ne!(
+            edge_value(Direction::Forward, 3, 1, &unobserved())?,
+            edge_value(Direction::Forward, 3, 1, &healthy())?,
+            "intermediate edges must be scored from their observations"
+        );
+        Ok(())
+    }
+
+    // ── Measured-dead versus unobserved ─────────────────────────────────
+
+    #[test]
+    fn forward_should_rank_a_measured_dead_edge_below_a_barely_working_one() -> anyhow::Result<()> {
+        let relayed = |score: Option<f64>| Observations::default().with_intermediate(Some(FUNDED), score);
+
+        // Worst achievable positive score: one success in the window, slowest latency bucket.
+        let barely_working = edge_value(Direction::Forward, 3, 1, &relayed(Some(0.2 * 0.15)))?;
+        let measured_dead = edge_value(Direction::Forward, 3, 1, &relayed(Some(0.0)))?;
+        let never_probed = edge_value(Direction::Forward, 3, 1, &relayed(None))?;
+
+        assert!(
+            measured_dead < barely_working,
+            "an edge that never relayed anything must rank below one that sometimes does: {measured_dead} vs \
+             {barely_working}"
+        );
+        assert!(
+            never_probed > barely_working,
+            "an unprobed edge keeps the benefit of the doubt so it stays discoverable"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn forward_should_starve_a_measured_dead_edge_without_pruning_it() -> anyhow::Result<()> {
+        // Two requirements pull in opposite directions. The value must stay strictly positive, or
+        // the edge is pruned from the probe candidate set and can never recover (RFC-0010 §4.2.3).
+        // It must also be minuscule, since weighted-random sampling picks proportionally to value
+        // — merely ranking last would still see the edge relaying traffic.
+        let measured_dead = edge_value(
+            Direction::Forward,
+            3,
+            1,
+            &Observations::default().with_intermediate(Some(FUNDED), Some(0.0)),
+        )?;
+        let sound = edge_value(Direction::Forward, 3, 1, &relayed_only())?;
+
+        // Both bounds are literal on purpose. Comparing against `MEASURED_DEAD_FLOOR` would move
+        // with the constant and assert nothing about it.
+        assert!(
+            measured_dead > 0.0,
+            "a non-positive value prunes the edge from the probe candidate set, so it can never recover"
+        );
+        assert!(
+            measured_dead < 1e-6,
+            "and it must be minuscule rather than merely last, got {measured_dead}"
+        );
+
+        let share = measured_dead / (measured_dead + sound);
+        assert!(
+            share < 1e-8,
+            "a measured-dead edge must draw a negligible share of the sampling weight, got {share}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::forward(Direction::Forward)]
+    #[case::forward_without_self_loopback(Direction::ForwardWithoutSelfLoopback)]
+    fn unchecked_connectivity_must_be_penalized_not_rejected(#[case] direction: Direction) -> anyhow::Result<()> {
+        // Rejecting the first edge on unknown connectivity is self-sealing: the edge is never
+        // selected, so it is never probed, so connectivity stays unknown. Only an observed
+        // disconnection may reject.
+        let value_fn = direction.build(3, None)?.into_value_fn();
+
+        let unknown = value_fn(1.0, &connectivity_unknown(), 0);
+        let down = value_fn(1.0, &connectivity_down(), 0);
+
+        assert!(
+            unknown > 0.0,
+            "an unchecked first edge must stay selectable so it can be probed, got {unknown}"
+        );
+        assert!(
+            down < 0.0,
+            "an edge observed to be down must still be rejected, got {down}"
+        );
+        Ok(())
+    }
+
+    // ── Channel funding ────────────────────────────────────────────────
+
+    #[rstest]
+    #[case::final_hop_needs_no_channel(None, 0, None, true)]
+    #[case::final_hop_exempt_when_drained(Some(0), 0, None, true)]
+    #[case::final_hop_exempt_at_a_zero_face_value(Some(0), 0, Some(0), true)]
+    #[case::unknown_balance_is_not_evidence_of_sufficiency(None, 1, None, false)]
+    #[case::drained_but_open_channel(Some(0), 1, None, false)]
+    #[case::exactly_the_requirement(Some(MIN_BALANCE_HEADROOM), 1, None, true)]
+    #[case::one_unit_below_the_requirement(Some(MIN_BALANCE_HEADROOM - 1), 1, None, false)]
+    // A zero face value is a network pricing relaying at nothing, so any channel funds any hop —
+    // but one must still exist, since the relayer issues a (zero-value) ticket on it.
+    #[case::free_relaying_over_a_drained_channel(Some(0), 3, Some(0), true)]
+    #[case::free_relaying_still_needs_a_channel(None, 3, Some(0), false)]
+    fn balance_suffices_should_gate_on_a_fundable_channel(
+        #[case] balance: Option<u64>,
+        #[case] remaining_hops: usize,
+        #[case] ticket_face_value: Option<u64>,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            balance_suffices(
+                balance.map(Balance::from),
+                remaining_hops,
+                ticket_face_value
+                    .map(Balance::from)
+                    .unwrap_or_else(default_ticket_face_value)
+            ),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn balance_suffices_should_scale_with_remaining_hops_and_face_value(
+        #[values(1, 2, 3)] remaining_hops: usize,
+        #[values(None, Some(1_000))] ticket_face_value: Option<u64>,
+    ) {
+        let face_value = ticket_face_value
+            .map(Balance::from)
+            .unwrap_or_else(default_ticket_face_value);
+        let required = Balance::from(remaining_hops as u64) * face_value * Balance::from(MIN_BALANCE_HEADROOM);
+
+        assert!(
+            balance_suffices(Some(required), remaining_hops, face_value),
+            "{remaining_hops} hops must accept a balance exactly at the requirement"
+        );
+        assert!(
+            !balance_suffices(Some(required - Balance::one()), remaining_hops, face_value),
+            "{remaining_hops} hops must reject a balance one unit below it"
+        );
+    }
+
+    #[test]
+    fn balance_suffices_should_require_more_as_the_face_value_grows() {
+        // Every case passing `None` reads the balance as a ticket count. A real face value must
+        // make the same balance insufficient.
+        let one_ticket_at_unit_face = Balance::from(MIN_BALANCE_HEADROOM);
+        assert!(balance_suffices(
+            Some(one_ticket_at_unit_face),
+            1,
+            default_ticket_face_value()
+        ));
+        assert!(
+            !balance_suffices(Some(one_ticket_at_unit_face), 1, Balance::from(1_000u64)),
+            "a larger face value must make the same balance insufficient"
+        );
+    }
+
+    #[rstest]
+    #[case::first_edge(0)]
+    #[case::intermediate_edge(1)]
+    fn forward_should_reject_an_edge_whose_balance_cannot_fund_the_remaining_hops(
+        #[case] path_index: usize,
+    ) -> anyhow::Result<()> {
+        let insufficient = edge_value(Direction::Forward, 3, path_index, &funded_with(1))?;
+        let sufficient = edge_value(Direction::Forward, 3, path_index, &funded_with(FUNDED))?;
+
+        assert!(
+            insufficient < 0.0,
+            "an underfunded hop at index {path_index} must be rejected, got {insufficient}"
+        );
+        assert!(
+            sufficient > 0.0,
+            "a funded hop at index {path_index} must be accepted, got {sufficient}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn forward_last_edge_should_accept_a_drained_channel() -> anyhow::Result<()> {
+        // Intermediate stream only: `funded_with` also carries a healthy immediate stream, and the
+        // connectivity fallback would return a positive value on its own — so with it present this
+        // would pass even with the final-hop exemption removed entirely.
+        let drained = Observations::default().with_intermediate(Some(0), Some(GOOD_SCORE));
+        let value = edge_value(Direction::Forward, 3, 2, &drained)?;
+
+        // Not merely positive: with the exemption removed this arm falls through to the
+        // unobserved-edge penalty, which is also positive. Only a value carrying the intermediate
+        // score shows the drained channel was accepted rather than merely tolerated.
+        assert!(
+            value > TEST_PENALTY,
+            "a drained final hop must be scored on its intermediate stream, not handed the exploration penalty: got \
+             {value}, penalty is {TEST_PENALTY}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn forward_first_edge_should_reject_when_the_face_value_outgrows_the_balance() -> anyhow::Result<()> {
+        let observations = funded_with(1_000);
+        let length = std::num::NonZeroUsize::new(3).context("path length must be non-zero")?;
+
+        let cheap = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE, None)
+            .into_value_fn()(1.0, &observations, 0);
+        let expensive = EdgeValueFn::<_, Observations>::forward(
+            length,
             TEST_PENALTY,
             TEST_MIN_ACK_RATE,
-        );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.05),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
+            Some(Balance::from(10_000u64)),
+        )
+        .into_value_fn()(1.0, &observations, 0);
 
-        let cost = f(1.0, &obs, 1);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 1,
-            result_value: cost
-        });
+        assert!(cheap > 0.0, "the same balance funds the path at a unit face value");
+        assert!(
+            expensive < 0.0,
+            "and fails once a single ticket costs more than the balance holds, got {expensive}"
+        );
         Ok(())
     }
 
-    #[test]
-    fn adversarial_peer_good_probes_but_zero_acks() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward(
-            std::num::NonZeroUsize::new(3).context("should be non-zero")?,
-            TEST_PENALTY,
-            TEST_MIN_ACK_RATE,
+    #[rstest]
+    #[case::at_the_declared_length(2)]
+    #[case::beyond_the_declared_length(5)]
+    fn forward_without_self_loopback_should_reject_an_index_past_the_declared_length(
+        #[case] path_index: usize,
+    ) -> anyhow::Result<()> {
+        // `length` counts the finished path, including the edge the caller appends, so it is the
+        // caller that keeps it consistent with the traversed indices. Understating it must not
+        // collapse to zero remaining hops, which would waive the funding check and accept a
+        // drained relay.
+        let value =
+            Direction::ForwardWithoutSelfLoopback.build(2, None)?.into_value_fn()(1.0, &funded_with(0), path_index);
+        assert!(
+            value < 0.0,
+            "index {path_index} exceeds a declared length of 2 and must be rejected, got {value}"
         );
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.0),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
-        Ok(())
-    }
-
-    #[test]
-    fn forward_without_loopback_first_edge_rejected_when_ack_rate_below_threshold() -> anyhow::Result<()> {
-        let value_fn = EdgeValueFn::<_, Observations>::forward_without_self_loopback(TEST_PENALTY, TEST_MIN_ACK_RATE);
-        let f = value_fn.into_value_fn();
-        let obs = Observations {
-            immediate: Some(StubImmediate {
-                connected: true,
-                score: 0.95,
-                ack_rate: Some(0.05),
-            }),
-            intermediate: Some(StubIntermediate {
-                capacity: Some(1000),
-                score: 0.95,
-            }),
-        };
-
-        let cost = f(1.0, &obs, 0);
-        insta::assert_yaml_snapshot!(ValueResult {
-            observations: obs,
-            initial_value: 1.0,
-            path_index: 0,
-            result_value: cost
-        });
         Ok(())
     }
 }
