@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "3.1.1"
+version = "4.0.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -43,7 +43,7 @@ node = [
 ]
 node-session-client = ["node"]
 node-session-server = ["node", "hopr-types/network"]
-serde = ["hopr-types/serde", "dep:serde"]
+serde = ["hopr-types/serde", "dep:serde", "dep:serde_bytes"]
 tickets = ["chain", "dep:auto_impl"]
 types-curvy = ["hopr-types/curvy"]
 types-random = ["hopr-types/random"]
@@ -74,6 +74,7 @@ libp2p-identity = { version = "0.2.14", features = [
   "rand",
 ] }
 serde = { version = "1.0.229", features = ["derive"], optional = true }
+serde_bytes = { version = "0.11.19", optional = true }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.20"
 tracing = { version = "0.1.44", default-features = false, features = [
