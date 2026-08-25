@@ -41,9 +41,7 @@ where
     ///
     /// This is typically additional data transported via PIX between Entry and Exit nodes.
     /// It is optional and per-pool specific, and can be left out as `()`.
-    ///
-    /// The deposit data is expected to be retrievable from a byte-array.
-    type DepositData: Clone + for<'a> TryFrom<&'a [u8]> + Send + Sync + 'static;
+    type DepositData: Clone + Send + Sync + 'static;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
     async fn deposit_funds_to(
