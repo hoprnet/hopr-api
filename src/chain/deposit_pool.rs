@@ -5,6 +5,8 @@ use hopr_types::{
     primitive::prelude::{Address, HoprBalance},
 };
 
+use crate::node::PixDepositData;
+
 /// A future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`]
 /// or an error occurs.
 pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, HoprBalance), E>>;
@@ -37,10 +39,18 @@ where
     /// Some receipt returned on successful deposits and withdrawals.
     type Receipt: Send + Sync + 'static;
 
-    /// Pool-specific data associated with a PIX deposit
+    /// Pool-specific data associated with a PIX deposit.
     ///
-    /// This is typically additional data transported via PIX between Entry and Exit nodes.
-    type DepositData: Clone + Send + Sync + 'static;
+    /// The type must be fallibly-convertible to/from [`PixDepositData`].
+    type PoolDepositData: Clone
+        + TryFrom<PixDepositData, Error = Self::Error>
+        + TryInto<PixDepositData, Error = Self::Error>
+        + Send
+        + Sync
+        + 'static;
+
+    /// Generates additional deposit data identified by `id`.
+    async fn generate_deposit_data(&self, _id: &PixAddressId) -> Result<Self::PoolDepositData, Self::Error>;
 
     /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
     async fn deposit_funds_to(
@@ -48,18 +58,18 @@ where
         id: &PixAddressId,
         dst: &K::Public,
         amount: HoprBalance,
-        additional_data: Option<Self::DepositData>,
+        additional_data: Self::PoolDepositData,
     ) -> Result<Self::Receipt, Self::Error>;
 
     /// Performs batch deposit of funds from node's Safe to multiple deposit addresses.
     ///
-    /// This default implementation simply concurrently calls [`self.deposit_funds_to`].
+    /// This default implementation simply concurrently calls `deposit_funds_to`.
     /// Implementors may choose a more efficient pool-native batching.
     ///
     /// The method is allowed to return fewer receipts than deposits.
     async fn deposit_funds_to_multiple(
         &self,
-        deposits: &[(PixAddressId, K::Public, HoprBalance, Option<Self::DepositData>)],
+        deposits: &[(PixAddressId, K::Public, HoprBalance, Self::PoolDepositData)],
     ) -> Result<Vec<Self::Receipt>, Self::Error> {
         let futures = deposits.iter().map(|(id, dst, amount, data)| {
             let data = data.clone();
@@ -117,7 +127,7 @@ where
         key: &K,
         dst_id: &PixAddressId,
         dst: K::Public,
-        additional_dst_data: Option<Self::DepositData>,
+        additional_dst_data: Self::PoolDepositData,
         amount: Option<HoprBalance>,
     ) -> Result<Self::Receipt, Self::Error>;
 
@@ -130,7 +140,7 @@ where
         keys: &[(PixAddressId, K)],
         dst_id: &PixAddressId,
         dst: K::Public,
-        additional_dst_data: Option<Self::DepositData>,
+        additional_dst_data: Self::PoolDepositData,
     ) -> Result<Vec<Result<(K::Public, Self::Receipt), Self::Error>>, Self::Error> {
         let futures = keys.iter().map(|(id, key)| {
             let dst = dst.clone();
