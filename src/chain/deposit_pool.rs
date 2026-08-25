@@ -12,20 +12,6 @@ use crate::node::PixDepositData;
 pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, HoprBalance), E>>;
 
 /// Per-item outcomes of a batch [`DepositPool`] operation.
-///
-/// One entry per input, each carrying the [`PixAddressId`] of the allocation it belongs to, so a
-/// caller attributes an outcome by *reading it* rather than by counting positions. Order and
-/// length are deliberately not part of the contract: an implementor overriding a batch method with
-/// pool-native batching may complete items out of order, and the trait already permits returning
-/// fewer outcomes than inputs. An input whose id is absent was not attempted.
-///
-/// The alternative — pairing each receipt with the operation's destination — reads as if it
-/// identified something but does not: [`DepositPool::withdraw_multiple_deposits`] and
-/// [`DepositPool::pool_transfer_multiple`] settle a whole batch to one destination, so that value
-/// is identical in every entry. It was the shape of these results before 4.0, and it left index
-/// arithmetic as the only way to tell outcomes apart. A caller that built its input list with
-/// `filter_map` while tracking ids with `map` would silently attribute each outcome to the wrong
-/// allocation.
 pub type BatchOutcomes<R, E> = Vec<Result<(PixAddressId, R), E>>;
 
 /// Contains abstraction over the deposit pool from PIX.
@@ -82,11 +68,6 @@ where
     ///
     /// This default implementation simply concurrently calls `deposit_funds_to`.
     /// Implementors may choose a more efficient pool-native batching.
-    ///
-    /// One result per deposit, so a partial failure keeps the receipts of the deposits that did
-    /// succeed. The outer `Err` is reserved for a failure to attempt the batch at all; a deposit
-    /// that was attempted and failed is reported in its own slot. See [`BatchOutcomes`] for what a
-    /// caller may and may not assume about the returned `Vec`.
     async fn deposit_funds_to_multiple(
         &self,
         deposits: &[(PixAddressId, K::Public, HoprBalance, Self::PoolDepositData)],
@@ -129,8 +110,6 @@ where
     ///
     /// This default implementation simply concurrently calls [`self.withdraw_deposit`].
     /// Implementors may choose a more efficient pool-native batching.
-    ///
-    /// One result per key; see [`BatchOutcomes`].
     async fn withdraw_multiple_deposits(
         &self,
         keys: &[(PixAddressId, K)],
@@ -162,8 +141,7 @@ where
     /// This default implementation simply concurrently calls [`self.pool_transfer`].
     /// Implementors may choose a more efficient pool-native batching.
     ///
-    /// One result per key, identified by its *source* allocation — `dst_id` is the same for every
-    /// element and is the caller's own argument. See [`BatchOutcomes`].
+    /// One result per key, identified by its *source* allocation.
     async fn pool_transfer_multiple(
         &self,
         keys: &[(PixAddressId, K)],
