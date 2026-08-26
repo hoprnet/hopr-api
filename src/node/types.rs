@@ -11,7 +11,7 @@ use hopr_types::{
 };
 
 use super::CompoundResult;
-use crate::chain::PixDepositData;
+pub use crate::chain::PixDepositData;
 
 /// Identity of a node on-chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
