@@ -1,4 +1,4 @@
-use futures::future::{join_all, BoxFuture};
+use futures::future::{BoxFuture, join_all};
 pub use hopr_types::crypto::primitives::{PixAddressId, PixDepositAddress, PixDepositSecret};
 use hopr_types::{
     crypto::prelude::Keypair,

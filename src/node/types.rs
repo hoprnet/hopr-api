@@ -9,8 +9,9 @@ use hopr_types::{
     internal::prelude::{RedeemableTicket, Ticket},
     primitive::{balance::HoprBalance, prelude::Address},
 };
-use crate::chain::PixDepositData;
+
 use super::CompoundResult;
+use crate::chain::PixDepositData;
 
 /// Identity of a node on-chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
