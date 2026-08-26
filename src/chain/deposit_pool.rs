@@ -5,7 +5,29 @@ use hopr_types::{
     primitive::prelude::{Address, HoprBalance},
 };
 
-use crate::node::PixDepositData;
+/// Additional data that is associated with a PIX deposit.
+///
+/// The format of the data is fully in control by the corresponding [deposit pool](DepositPool).
+///
+/// The Exit node is responsible for delivering this data to the Entry node (wire-serialization).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PixDepositData {
+    /// Identifier of the deposit address the data are associated with.
+    pub id: PixAddressId,
+    /// Actual deposit data.
+    ///
+    /// The format is fully in control of the corresponding [deposit pool](DepositPool) implementation.
+    #[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]
+    pub data: Box<[u8]>,
+}
+
+impl PixDepositData {
+    /// True if there are no deposit data associated with the deposit address.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+}
 
 /// A future that resolves once `min_amount` has been deposited to the `dst` [`PixDepositAddress`]
 /// or an error occurs.

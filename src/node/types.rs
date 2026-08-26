@@ -11,6 +11,7 @@ use hopr_types::{
 };
 
 use super::CompoundResult;
+pub use crate::chain::PixDepositData;
 
 /// Identity of a node on-chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -111,30 +112,6 @@ pub type DepositUpdated = futures::channel::mpsc::Sender<(PixAddressId, HoprBala
 /// The Exit node is responsible for fitting the received deposit data into the `SsaRequest` message
 /// and rejecting the Session if the produced deposit data is not valid for over-the-wire transfer.
 pub type DepositDataCreated = futures::channel::mpsc::Sender<PixDepositData>;
-
-/// Additional data that is associated with a PIX deposit.
-///
-/// The format of the data is fully in control by the corresponding [deposit pool](crate::chain::DepositPool).
-///
-/// The Exit node is responsible for delivering this data to the Entry node (wire-serialization).
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct PixDepositData {
-    /// Identifier of the deposit address the data are associated with.
-    pub id: PixAddressId,
-    /// Actual deposit data.
-    ///
-    /// The format is fully in control of the corresponding [deposit pool](crate::chain::DepositPool) implementation.
-    #[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]
-    pub data: Box<[u8]>,
-}
-
-impl PixDepositData {
-    /// True if there are no deposit data associated with the deposit address.
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
-    }
-}
 
 /// Data for [`NewDepositAddress`](PixEvent) event.
 #[derive(Debug, Clone)]
