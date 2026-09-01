@@ -7,7 +7,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/release-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     rust-overlay.url = "github:oxalica/rust-overlay/master";
-    crane.url = "github:ipetkov/crane/v0.23.4";
+    crane.url = "github:ipetkov/crane/v0.24.0";
 
     # HOPR Nix Library (provides flake-utils and reusable build functions)
     nix-lib.url = "github:hoprnet/nix-lib/v1.3.0";
