@@ -72,6 +72,9 @@ pub trait ChainWriteAccountOperations {
     ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>;
 
     /// Withdraws native or token currency from the `signer` to `recipient` in a single transaction.
+    ///
+    /// **Deprecated:** Use `withdraw` with `BasicPayloadGenerator` instead. Will be removed in 5.0.0
+    // TODO: remove this in the next major release (5.0.0)
     async fn withdraw_from_signer<C: Currency + Send>(
         &self,
         signer: &ChainKeypair,
