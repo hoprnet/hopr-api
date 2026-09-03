@@ -37,12 +37,76 @@ pub struct SessionAdmissionRequest {
     pub session_id: SessionId,
     /// Where the peer is asking for data to be forwarded.
     pub target: SessionTarget,
+    /// The session capabilities the peer asked for, as the raw wire bitfield.
+    ///
+    /// Undecoded because the capability set is defined by the transport rather than here, and
+    /// mirroring it would be two definitions to keep in step. A server that admits on a capability
+    /// must name the bit it means; the transport's own capability type documents the values.
+    pub capabilities: u8,
+    /// What the peer offered by way of incentivization, or [`None`] if it offered none.
+    ///
+    /// Already decoded and range-checked by the transport, which is the only side that can read the
+    /// wire encoding. A server that only prices by target can ignore it; one that wants to answer
+    /// *relative* to the offer — matching it, or holding a dimension to a floor the quota alone
+    /// does not express — needs it, and cannot recover it from anything else in this request.
+    pub offered: Option<OfferedIncentivization>,
 }
 
 impl SessionAdmissionRequest {
-    /// Describes a prospective session by the identifier it would take and the target it named.
-    pub fn new(session_id: SessionId, target: SessionTarget) -> Self {
-        Self { session_id, target }
+    /// Describes a prospective session by the identifier it would take, the target it named, and
+    /// the capabilities it asked for.
+    ///
+    /// The incentivization offer is attached with [`with_offer`](Self::with_offer); a request
+    /// without one describes a peer that offered none.
+    pub fn new(session_id: SessionId, target: SessionTarget, capabilities: u8) -> Self {
+        Self {
+            session_id,
+            target,
+            capabilities,
+            offered: None,
+        }
+    }
+
+    /// Records what the peer offered by way of incentivization.
+    pub fn with_offer(mut self, offered: OfferedIncentivization) -> Self {
+        self.offered = Some(offered);
+        self
+    }
+}
+
+/// The incentivization a peer offered, as the transport decoded it.
+///
+/// Plain numbers rather than the transport's own parameter type, which is defined in a crate this
+/// one cannot depend on. The dimensions travel beside the quota because they are not recoverable
+/// from it: the quota is their product, and the same product admits many splits — so a server that
+/// cares how the peer arrived at a quota, rather than only what it totals, can only see that here.
+///
+/// `#[non_exhaustive]`: build one with [`new`](Self::new).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OfferedIncentivization {
+    /// Independent parts the peer will split each aggregate into.
+    pub parts_per_ssa: u16,
+    /// Shares of one part needed to reconstruct it.
+    pub shares_per_part: u8,
+    /// Shares emitted per part beyond that threshold, as insurance against return-path loss.
+    pub surplus_shares: u8,
+    /// Bytes one aggregate is worth: every emitted share carries one payload, surplus included.
+    ///
+    /// Computed by the transport, which owns the payload size this is denominated in.
+    pub quota_per_ssa: u64,
+}
+
+impl OfferedIncentivization {
+    /// Records an offer of `parts_per_ssa` parts, each reconstructible from `shares_per_part`
+    /// shares and emitting `surplus_shares` more, together worth `quota_per_ssa` bytes.
+    pub fn new(parts_per_ssa: u16, shares_per_part: u8, surplus_shares: u8, quota_per_ssa: u64) -> Self {
+        Self {
+            parts_per_ssa,
+            shares_per_part,
+            surplus_shares,
+            quota_per_ssa,
+        }
     }
 }
 
@@ -128,6 +192,7 @@ pub trait HoprSessionServer {
 mod tests {
     use std::str::FromStr;
 
+    use anyhow::Context;
     use hopr_types::{
         crypto_random::Randomizable,
         network::{IpOrHost, SealedHost},
@@ -156,6 +221,7 @@ mod tests {
         Ok(SessionAdmissionRequest::new(
             SessionId::random(),
             SessionTarget::TcpStream(SealedHost::Plain(IpOrHost::from_str("127.0.0.1:80")?)),
+            0,
         ))
     }
 
@@ -168,6 +234,37 @@ mod tests {
         assert!(decision.enforce_pix.is_none());
         assert!(decision.pix_quota_range.is_none());
 
+        Ok(())
+    }
+
+    /// A request without an offer is what a peer asking for no incentivization looks like, and the
+    /// two are the same thing to a server — so the absence has to be representable, not implied.
+    #[test]
+    fn a_request_carries_an_offer_only_when_one_was_made() -> anyhow::Result<()> {
+        let bare = any_request()?;
+        assert!(bare.offered.is_none(), "no offer must read as no offer");
+
+        let offered = any_request()?.with_offer(OfferedIncentivization::new(8192, 64, 16, 649_363_456));
+        let offer = offered.offered.context("the offer must survive being attached")?;
+
+        assert_eq!(offer.parts_per_ssa, 8192);
+        assert_eq!(offer.shares_per_part, 64);
+        assert_eq!(offer.surplus_shares, 16);
+        assert_eq!(offer.quota_per_ssa, 649_363_456);
+
+        Ok(())
+    }
+
+    /// The capability bits are the peer's, passed through undecoded.
+    #[test]
+    fn a_request_carries_the_capability_bits_verbatim() -> anyhow::Result<()> {
+        let request = SessionAdmissionRequest::new(
+            SessionId::random(),
+            SessionTarget::TcpStream(SealedHost::Plain(IpOrHost::from_str("127.0.0.1:80")?)),
+            0b0010_1000,
+        );
+
+        assert_eq!(request.capabilities, 0b0010_1000);
         Ok(())
     }
 
