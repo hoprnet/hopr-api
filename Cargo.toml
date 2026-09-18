@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "4.3.1"
+version = "5.0.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -82,7 +82,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "4.0.0", features = [
+hopr-types = { version = "5.0.0", features = [
   "crypto",
   "internal",
   "primitive",
