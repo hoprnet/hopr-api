@@ -117,3 +117,8 @@ codegen-units = 1
 # make insta snapshots faster
 [profile.dev.package]
 insta.opt-level = 3
+
+# Points at the branch carrying the compact/expanded `OffchainPublicKey` split
+# (hopr-types#52). Drop this once hopr-types 5.0 is published.
+[patch.crates-io]
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "lukas/extended-offchain-key" }
