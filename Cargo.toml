@@ -76,7 +76,7 @@ libp2p-identity = { version = "0.3.0", features = [
 serde = { version = "1.0.229", features = ["derive"], optional = true }
 serde_bytes = { version = "0.11.19", optional = true }
 strum = { version = "0.28.0", features = ["derive"] }
-thiserror = "2.0.20"
+thiserror = "2.0.21"
 tracing = { version = "0.1.44", default-features = false, features = [
   "std",
   "release_max_level_debug",
