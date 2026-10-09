@@ -93,4 +93,16 @@ pub trait ChainWriteSafeOperations {
         &'a self,
         balance: HoprBalance,
     ) -> Result<BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>;
+
+    /// Sets the wxHOPR allowance that the node's Safe grants to the `HoprChannels` contract to `amount`.
+    ///
+    /// The node calls `approve(HoprChannels, amount)` on the wxHOPR token through the Safe module,
+    /// so the resulting allowance is the absolute `amount`, not an increase by `amount`.
+    ///
+    /// Like other write operations, the outer result reports whether the transaction was submitted
+    /// and the returned future resolves once it is confirmed on-chain.
+    async fn set_safe_allowance<'a>(
+        &'a self,
+        amount: HoprBalance,
+    ) -> Result<BoxFuture<'a, Result<ChainReceipt, Self::Error>>, Self::Error>;
 }
