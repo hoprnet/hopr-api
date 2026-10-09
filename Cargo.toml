@@ -82,12 +82,15 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel", features = [
+hopr-types = { version = "4.1.0", features = [
   "crypto",
   "internal",
   "primitive",
   "rayon",
 ] }
+
+[patch.crates-io]
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", branch = "q-core-1024-jura-prod-safes-wxhopr-allowance-exhausted-all-channel" }
 
 [dev-dependencies]
 anyhow = "1.0.104"
