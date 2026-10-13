@@ -22,7 +22,7 @@ pub mod tickets;
 
 pub use hopr_types as types;
 pub use hopr_types::{
-    crypto::prelude::{ChainKeypair, OffchainKeypair, OffchainPublicKey},
+    crypto::prelude::{ChainKeypair, ExpandedOffchainPublicKey, OffchainKeypair, OffchainPublicKey},
     primitive::{
         multiaddr::Multiaddr,
         prelude::{Address, HoprBalance, WxHOPR, XDai, XDaiBalance},
