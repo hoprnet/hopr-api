@@ -58,9 +58,9 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
 /// value. Face value is network-wide — identical for every channel — but time-varying, so it is
 /// supplied per evaluation rather than stored on the edge; see [`Balance`](super::traits::Balance).
 ///
-/// This is the bare funding requirement, not a margin: any slack above one winning ticket is the
-/// funding strategy's responsibility, so the planner only rejects a channel that cannot afford the
-/// path's tickets at all.
+/// This is the bare funding requirement, not a margin: any slack above it is the funding
+/// strategy's responsibility, so the planner only rejects a channel that cannot afford the path's
+/// tickets at all.
 ///
 /// The face value is already resolved by the caller — the constructors substitute
 /// [`default_ticket_face_value`] when none was supplied, so this sees a concrete figure. A zero face value prices
