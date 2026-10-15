@@ -16,12 +16,6 @@ pub type BasicValueFn<C, W> = Arc<dyn Fn(C, &W, usize) -> C + Send + Sync>;
 /// a pruned edge stops being probed and can never recover, which RFC-0010 §4.2.3 forbids.
 const MEASURED_DEAD_FLOOR: f64 = 1e-9;
 
-/// Multiple of the bare-minimum balance an edge must hold to be selected.
-///
-/// Requiring exactly the ticket value flaps: the balance is indexed from chain, so it lags
-/// redemptions, and probabilistic wins make it fall in jumps rather than smoothly.
-pub const MIN_BALANCE_HEADROOM: u64 = 2;
-
 /// Face value assumed when a caller supplies none.
 ///
 /// One base unit per single-hop ticket, i.e. the balance is taken to be counted in tickets already.
@@ -61,15 +55,18 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
 /// Whether a channel's balance can fund the ticket an edge at this position must issue.
 ///
 /// A relayer with `remaining_hops` hops after it issues a ticket worth that many times the face
-/// value, plus [`MIN_BALANCE_HEADROOM`]. Face value is network-wide — identical for every channel —
-/// but time-varying, so it is supplied per evaluation rather than stored on the edge; see
-/// [`Balance`](super::traits::Balance).
+/// value. Face value is network-wide — identical for every channel — but time-varying, so it is
+/// supplied per evaluation rather than stored on the edge; see [`Balance`](super::traits::Balance).
+///
+/// This is the bare funding requirement, not a margin: any slack above it is the funding
+/// strategy's responsibility, so the planner only rejects a channel that cannot afford the path's
+/// tickets at all.
 ///
 /// The face value is already resolved by the caller — the constructors substitute
 /// [`default_ticket_face_value`] when none was supplied, so this sees a concrete figure. A zero face value prices
 /// relaying at nothing, so any channel funds any hop — but one must still exist, since the relayer issues a
-/// (zero-value) ticket on it. That is a supported network-wide mode, not a producer error; it waives
-/// [`MIN_BALANCE_HEADROOM`] for every edge at once, leaving the probe scores as the only thing separating relays.
+/// (zero-value) ticket on it. That is a supported network-wide mode, not a producer error, leaving the
+/// probe scores as the only thing separating relays.
 ///
 /// `remaining_hops == 0` is the final hop: zero-value ticket, no channel needed. A `None` balance is
 /// unknown, which is not evidence of sufficiency.
@@ -85,7 +82,6 @@ fn balance_suffices(balance: Option<Balance>, remaining_hops: usize, ticket_face
     balance.is_some_and(|balance| {
         Balance::from(remaining_hops as u64)
             .checked_mul(ticket_face_value)
-            .and_then(|required| required.checked_mul(Balance::from(MIN_BALANCE_HEADROOM)))
             .is_some_and(|required| balance >= required)
     })
 }
@@ -1121,8 +1117,11 @@ mod tests {
     #[case::final_hop_exempt_at_a_zero_face_value(Some(0), 0, Some(0), true)]
     #[case::unknown_balance_is_not_evidence_of_sufficiency(None, 1, None, false)]
     #[case::drained_but_open_channel(Some(0), 1, None, false)]
-    #[case::exactly_the_requirement(Some(MIN_BALANCE_HEADROOM), 1, None, true)]
-    #[case::one_unit_below_the_requirement(Some(MIN_BALANCE_HEADROOM - 1), 1, None, false)]
+    #[case::exactly_the_requirement(Some(2), 2, Some(1), true)]
+    #[case::one_unit_below_the_requirement(Some(1), 2, Some(1), false)]
+    // One winning ticket left now funds a single remaining hop: the balance headroom that used to
+    // reject this is gone, so a nearly-drained channel is selectable down to its last ticket.
+    #[case::one_winning_ticket_remaining_now_suffices(Some(1), 1, Some(1), true)]
     // A zero face value is a network pricing relaying at nothing, so any channel funds any hop —
     // but one must still exist, since the relayer issues a (zero-value) ticket on it.
     #[case::free_relaying_over_a_drained_channel(Some(0), 3, Some(0), true)]
@@ -1153,7 +1152,7 @@ mod tests {
         let face_value = ticket_face_value
             .map(Balance::from)
             .unwrap_or_else(default_ticket_face_value);
-        let required = Balance::from(remaining_hops as u64) * face_value * Balance::from(MIN_BALANCE_HEADROOM);
+        let required = Balance::from(remaining_hops as u64) * face_value;
 
         assert!(
             balance_suffices(Some(required), remaining_hops, face_value),
@@ -1169,7 +1168,7 @@ mod tests {
     fn balance_suffices_should_require_more_as_the_face_value_grows() {
         // Every case passing `None` reads the balance as a ticket count. A real face value must
         // make the same balance insufficient.
-        let one_ticket_at_unit_face = Balance::from(MIN_BALANCE_HEADROOM);
+        let one_ticket_at_unit_face = Balance::one();
         assert!(balance_suffices(
             Some(one_ticket_at_unit_face),
             1,
@@ -1181,13 +1180,16 @@ mod tests {
         );
     }
 
+    // Required balance is `remaining_hops × face` with no headroom: index 0 of a 3-hop path funds 2
+    // onward hops, index 1 funds 1. The insufficient balance is set one ticket below each.
     #[rstest]
-    #[case::first_edge(0)]
-    #[case::intermediate_edge(1)]
+    #[case::first_edge(0, 1)]
+    #[case::intermediate_edge(1, 0)]
     fn forward_should_reject_an_edge_whose_balance_cannot_fund_the_remaining_hops(
         #[case] path_index: usize,
+        #[case] insufficient_balance: u64,
     ) -> anyhow::Result<()> {
-        let insufficient = edge_value(Direction::Forward, 3, path_index, &funded_with(1))?;
+        let insufficient = edge_value(Direction::Forward, 3, path_index, &funded_with(insufficient_balance))?;
         let sufficient = edge_value(Direction::Forward, 3, path_index, &funded_with(FUNDED))?;
 
         assert!(
