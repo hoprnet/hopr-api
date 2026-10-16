@@ -49,4 +49,12 @@ pub trait NetworkStreamControl: std::fmt::Debug {
 
     /// Opens a new outbound stream to the given peer.
     async fn open(self, peer: PeerId) -> Result<impl AsyncRead + AsyncWrite + Send, impl std::error::Error>;
+
+    /// Disconnects from the given peer, closing all underlying network connections.
+    ///
+    /// The default implementation is a no-op so that stubs and mock implementations
+    /// remain compatible without changes.
+    async fn disconnect(&self, _peer: PeerId) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
 }
