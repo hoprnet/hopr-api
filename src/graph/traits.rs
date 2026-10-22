@@ -117,6 +117,13 @@ pub trait EdgeObservableRead {
     /// balance or connectivity update creates a stream without recording a probe, and averaging
     /// against that empty stream halves every edge only one stream can observe.
     fn score(&self) -> Option<f64>;
+
+    /// How usable the edge's destination is as a relayer, in `[0.0, 1.0]`: `0.0` unusable, `1.0`
+    /// healthy. Judged by the graph's owner from its own traffic; see
+    /// [`NetworkGraphUpdate::record_node_health`].
+    fn health(&self) -> f64 {
+        1.0
+    }
 }
 
 /// Combined trait for full read/write access to edge observations.
@@ -304,6 +311,20 @@ pub trait NetworkGraphUpdate {
     fn record_node<N>(&self, update: N)
     where
         N: MeasurableNode + Clone + Send + Sync + 'static;
+
+    /// Records how usable `node` is as a relayer, in `[0.0, 1.0]`, as judged by the graph's owner
+    /// from its own traffic. Every edge into `node` reports it through [`EdgeObservableRead::health`].
+    fn record_node_health(&self, node: &hopr_types::crypto::types::OffchainPublicKey, health: f64) {
+        let _ = (node, health);
+    }
+
+    /// [`record_node_health`](Self::record_node_health) for several nodes at once, so an
+    /// implementation can apply them under one write.
+    fn record_nodes_health(&self, healths: &[(hopr_types::crypto::types::OffchainPublicKey, f64)]) {
+        for (node, health) in healths {
+            self.record_node_health(node, *health);
+        }
+    }
 }
 
 /// A fold-like value function for graph traversal path scoring.
