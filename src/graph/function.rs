@@ -45,6 +45,26 @@ fn score_or_penalize(cost: f64, score: Option<f64>, penalty: f64) -> f64 {
     cost * multiplier.max(MEASURED_DEAD_FLOOR)
 }
 
+/// Scales the value of an edge leading into a relayer (`into_relayer` of its path index) by that
+/// relayer's health; an unusable relayer rejects the edge. An edge into the path's endpoint is left
+/// alone: how a node fares as a relayer for other traffic is no reason to avoid it as a destination.
+fn with_health<W: EdgeObservableRead + 'static>(
+    into_relayer: impl Fn(usize) -> bool + Send + Sync + 'static,
+    value_fn: impl Fn(f64, &W, usize) -> f64 + Send + Sync + 'static,
+) -> BasicValueFn<f64, W> {
+    Arc::new(move |cost, observation, path_index| {
+        let value = value_fn(cost, observation, path_index);
+        if !into_relayer(path_index) {
+            return value;
+        }
+        match observation.health() {
+            _ if value <= 0.0 => value,
+            health if health <= 0.0 => -value,
+            health => value * health.min(1.0),
+        }
+    })
+}
+
 /// Applies the ack rate as a value modifier for immediate edges.
 ///
 /// When the ack rate is available and below `min_ack_rate`, the edge is rejected.
@@ -194,54 +214,57 @@ where
         Self {
             initial: 1.0,
             min: Some(0.0),
-            value_fn: Arc::new(move |cost: f64, observation: &W, path_index: usize| match path_index {
-                v if v == (length - 1) => {
-                    // Last edge (relay -> dest): accept an intermediate balance or immediate connectivity.
-                    // No funding requirement here — the final hop's ticket is zero-value, so it
-                    // needs no channel; the balance check only selects which stream to score by.
-                    if let Some(intermediate) = observation.intermediate_qos()
-                        && intermediate.balance().is_some()
-                    {
-                        let base = score_or_penalize(cost, intermediate.score(), penalty);
-                        // For direct routes (length == 1) the single edge is also the immediate peer,
-                        // so apply ack rate when immediate data is available.
-                        if length == 1
-                            && let Some(immediate) = observation.immediate_qos()
+            value_fn: with_health(
+                move |index| index + 1 < length,
+                move |cost: f64, observation: &W, path_index: usize| match path_index {
+                    v if v == (length - 1) => {
+                        // Last edge (relay -> dest): accept an intermediate balance or immediate connectivity.
+                        // No funding requirement here — the final hop's ticket is zero-value, so it
+                        // needs no channel; the balance check only selects which stream to score by.
+                        if let Some(intermediate) = observation.intermediate_qos()
+                            && intermediate.balance().is_some()
                         {
+                            let base = score_or_penalize(cost, intermediate.score(), penalty);
+                            // For direct routes (length == 1) the single edge is also the immediate peer,
+                            // so apply ack rate when immediate data is available.
+                            if length == 1
+                                && let Some(immediate) = observation.immediate_qos()
+                            {
+                                return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                            }
+                            return base;
+                        }
+
+                        // Fallback: use immediate connectivity score if available
+                        if let Some(immediate) = observation.immediate_qos()
+                            && immediate.is_connected() != Some(false)
+                        {
+                            let base = score_or_penalize(cost, immediate.score(), penalty);
+                            // Same as above: enforce ack rate for 1-hop routes
+                            if length == 1 {
+                                return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                            }
+                            return base;
+                        }
+
+                        // Last hop is not monetized — penalize but do not reject
+                        cost * penalty
+                    }
+                    0 => {
+                        // First edge: require a connected peer whose channel can fund the rest of the path
+                        if let Some(immediate) = observation.immediate_qos()
+                            && immediate.is_connected() != Some(false)
+                            && let Some(intermediate) = observation.intermediate_qos()
+                            && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
+                        {
+                            let base = score_or_penalize(cost, observation.score(), penalty);
                             return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
                         }
-                        return base;
+                        -cost
                     }
-
-                    // Fallback: use immediate connectivity score if available
-                    if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected() != Some(false)
-                    {
-                        let base = score_or_penalize(cost, immediate.score(), penalty);
-                        // Same as above: enforce ack rate for 1-hop routes
-                        if length == 1 {
-                            return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
-                        }
-                        return base;
-                    }
-
-                    // Last hop is not monetized — penalize but do not reject
-                    cost * penalty
-                }
-                0 => {
-                    // First edge: require a connected peer whose channel can fund the rest of the path
-                    if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected() != Some(false)
-                        && let Some(intermediate) = observation.intermediate_qos()
-                        && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
-                    {
-                        let base = score_or_penalize(cost, observation.score(), penalty);
-                        return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
-                    }
-                    -cost
-                }
-                index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
-            }),
+                    index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
+                },
+            ),
         }
     }
 
@@ -276,20 +299,23 @@ where
         Self {
             initial: 1.0,
             min: Some(0.0),
-            value_fn: Arc::new(move |cost: f64, observation: &W, path_index: usize| match path_index {
-                v if v == (length - 1) => {
-                    // Last edge (relay -> me): require connectivity with immediate score
-                    if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected() != Some(false)
-                    {
-                        let base = score_or_penalize(cost, immediate.score(), penalty);
-                        return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+            value_fn: with_health(
+                move |index| index + 1 < length,
+                move |cost: f64, observation: &W, path_index: usize| match path_index {
+                    v if v == (length - 1) => {
+                        // Last edge (relay -> me): require connectivity with immediate score
+                        if let Some(immediate) = observation.immediate_qos()
+                            && immediate.is_connected() != Some(false)
+                        {
+                            let base = score_or_penalize(cost, immediate.score(), penalty);
+                            return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                        }
+                        -cost
                     }
-                    -cost
-                }
-                // First edge and intermediaries share the same funding requirement
-                index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
-            }),
+                    // First edge and intermediaries share the same funding requirement
+                    index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
+                },
+            ),
         }
     }
 
@@ -308,11 +334,35 @@ where
     ///
     /// `length` counts edges in the **finished** path, including any the caller appends after
     /// traversal — `h + 1` for a loopback of `h` hops. Needed to size each edge's ticket.
+    ///
+    /// Every edge of such a path leads into a relayer (the destination is appended afterwards), so all
+    /// are scaled by relayer health; see [`EdgeValueFn::loopback_probe`] for probing.
     pub fn forward_without_self_loopback(
         length: std::num::NonZeroUsize,
         penalty: f64,
         min_ack_rate: f64,
         ticket_face_value: Option<Balance>,
+    ) -> Self {
+        Self::without_self_loopback(length, penalty, min_ack_rate, ticket_face_value, true)
+    }
+
+    /// [`EdgeValueFn::forward_without_self_loopback`] for loopback probes: relayer health is not
+    /// applied, as a pruned edge would stop being probed and could never recover.
+    pub fn loopback_probe(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+    ) -> Self {
+        Self::without_self_loopback(length, penalty, min_ack_rate, ticket_face_value, false)
+    }
+
+    fn without_self_loopback(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+        apply_health: bool,
     ) -> Self {
         let length = length.get();
         let penalty = penalty.clamp(0.0, 1.0);
@@ -320,27 +370,32 @@ where
         // Resolved here rather than per edge: the face value is network-wide and fixed for the
         // lifetime of this function, so the path search should not re-derive it for every edge.
         let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
+        let value_fn = move |cost: f64, observation: &W, path_index: usize| match path_index {
+            0 => {
+                // First edge: require a connected peer whose channel can fund the rest of the path
+                if let Some(immediate) = observation.immediate_qos()
+                    && immediate.is_connected() != Some(false)
+                    && let Some(intermediate) = observation.intermediate_qos()
+                    && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
+                {
+                    let base = score_or_penalize(cost, observation.score(), penalty);
+                    return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                }
+                -cost
+            }
+            // An index at or past `length` means the caller understated it. Reject, rather than
+            // let the subtraction collapse to zero remaining hops and waive funding entirely.
+            index if index >= length => -cost,
+            index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
+        };
         Self {
             initial: 1.0,
             min: Some(0.0),
-            value_fn: Arc::new(move |cost: f64, observation: &W, path_index: usize| match path_index {
-                0 => {
-                    // First edge: require a connected peer whose channel can fund the rest of the path
-                    if let Some(immediate) = observation.immediate_qos()
-                        && immediate.is_connected() != Some(false)
-                        && let Some(intermediate) = observation.intermediate_qos()
-                        && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
-                    {
-                        let base = score_or_penalize(cost, observation.score(), penalty);
-                        return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
-                    }
-                    -cost
-                }
-                // An index at or past `length` means the caller understated it. Reject, rather than
-                // let the subtraction collapse to zero remaining hops and waive funding entirely.
-                index if index >= length => -cost,
-                index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
-            }),
+            value_fn: if apply_health {
+                with_health(|_| true, value_fn)
+            } else {
+                Arc::new(value_fn)
+            },
         }
     }
 }
@@ -469,6 +524,8 @@ mod tests {
     struct Observations {
         immediate: Option<StubImmediate>,
         intermediate: Option<StubIntermediate>,
+        #[serde(skip)]
+        health: Option<f64>,
     }
 
     impl EdgeObservableRead for Observations {
@@ -495,6 +552,10 @@ mod tests {
                 (Some(only), None) | (None, Some(only)) => Some(only),
                 (None, None) => None,
             }
+        }
+
+        fn health(&self) -> f64 {
+            self.health.unwrap_or(1.0)
         }
     }
 
@@ -601,6 +662,7 @@ mod tests {
         Forward,
         Returning,
         ForwardWithoutSelfLoopback,
+        LoopbackProbe,
     }
 
     impl Direction {
@@ -619,6 +681,9 @@ mod tests {
                     TEST_MIN_ACK_RATE,
                     ticket_face_value,
                 ),
+                Self::LoopbackProbe => {
+                    EdgeValueFn::loopback_probe(length, TEST_PENALTY, TEST_MIN_ACK_RATE, ticket_face_value)
+                }
             })
         }
     }
@@ -954,6 +1019,83 @@ mod tests {
             returning < 0.0,
             "returning must reject a final edge it cannot reach directly, got {returning}"
         );
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::forward(Direction::Forward)]
+    #[case::returning(Direction::Returning)]
+    #[case::forward_without_self_loopback(Direction::ForwardWithoutSelfLoopback)]
+    fn an_edge_into_an_unusable_node_should_be_rejected(#[case] direction: Direction) -> anyhow::Result<()> {
+        let dead = Observations {
+            health: Some(0.0),
+            ..healthy()
+        };
+        assert!(
+            edge_value(direction, 3, 1, &healthy())? > 0.0,
+            "precondition: usable when healthy"
+        );
+        assert!(
+            edge_value(direction, 3, 1, &dead)? < 0.0,
+            "a dead relayer must prune the path"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::forward(Direction::Forward)]
+    #[case::returning(Direction::Returning)]
+    #[case::forward_without_self_loopback(Direction::ForwardWithoutSelfLoopback)]
+    fn an_edge_into_a_degraded_node_should_be_scaled_by_its_health(#[case] direction: Direction) -> anyhow::Result<()> {
+        let degraded = Observations {
+            health: Some(0.25),
+            ..healthy()
+        };
+        let full = edge_value(direction, 3, 1, &healthy())?;
+        assert!((edge_value(direction, 3, 1, &degraded)? - full * 0.25).abs() < 1e-12);
+        Ok(())
+    }
+
+    /// The last edge leads to the path's endpoint: the destination of a forward path, us on a return
+    /// path. Its standing as a relayer for other traffic must not make it unreachable.
+    #[rstest]
+    #[case::forward(Direction::Forward)]
+    #[case::returning(Direction::Returning)]
+    fn the_edge_into_the_endpoint_should_ignore_relayer_health(#[case] direction: Direction) -> anyhow::Result<()> {
+        let dead = Observations {
+            health: Some(0.0),
+            ..healthy()
+        };
+        assert_eq!(
+            edge_value(direction, 3, 2, &healthy())?,
+            edge_value(direction, 3, 2, &dead)?
+        );
+        Ok(())
+    }
+
+    /// A pruned edge would stop being probed and could never recover, so probes ignore health.
+    #[rstest]
+    #[case::first(0)]
+    #[case::last(2)]
+    fn a_loopback_probe_should_ignore_relayer_health(#[case] index: usize) -> anyhow::Result<()> {
+        let dead = Observations {
+            health: Some(0.0),
+            ..healthy()
+        };
+        assert_eq!(
+            edge_value(Direction::LoopbackProbe, 3, index, &healthy())?,
+            edge_value(Direction::LoopbackProbe, 3, index, &dead)?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_rejected_edge_should_stay_rejected_whatever_the_health() -> anyhow::Result<()> {
+        let unfunded_but_healthy = Observations {
+            health: Some(1.0),
+            ..unfunded()
+        };
+        assert!(edge_value(Direction::Forward, 3, 1, &unfunded_but_healthy)? < 0.0);
         Ok(())
     }
 
