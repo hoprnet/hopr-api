@@ -14,7 +14,8 @@ use super::ChannelId;
 use crate::{
     chain::{
         AccountSelector, ChainInfo, ChainReadAccountOperations, ChainReadChannelOperations, ChainReadSafeOperations,
-        ChainValues, ChainWriteAccountOperations, ChainWriteChannelOperations, ChannelSelector, HoprChainApi,
+        ChainValues, ChainWriteAccountOperations, ChainWriteChannelOperations, ChainWriteSafeOperations,
+        ChannelSelector, HoprChainApi,
     },
     node::{
         ChainOutput, CompoundResult, EitherErr,
@@ -230,6 +231,19 @@ pub trait IncentiveChannelOperations: HasChainApi {
     /// Returns the allowance of the node's Safe to spend funds in channels.
     async fn safe_allowance(&self) -> Result<HoprBalance, <Self::ChainApi as HoprChainApi>::ChainError> {
         self.chain_api().safe_allowance(self.identity().safe_address).await
+    }
+
+    /// Sets the allowance of the node's Safe to spend funds in channels to the given `amount`.
+    async fn set_safe_allowance(
+        &self,
+        amount: HoprBalance,
+    ) -> Result<ChainOutput<()>, <Self::ChainApi as HoprChainApi>::ChainError> {
+        Ok(self
+            .chain_api()
+            .set_safe_allowance(amount)
+            .and_then(identity)
+            .await?
+            .into())
     }
 
     /// Withdraws the given `amount` of [`Currency`] from the node to the `recipient`.
