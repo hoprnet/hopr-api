@@ -236,6 +236,9 @@ where
                     }
                     -cost
                 }
+                // An index at or past `length` means the caller understated it. Reject, rather than
+                // let the subtraction collapse to zero remaining hops and waive funding entirely.
+                index if index >= length => -cost,
                 index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
             }),
         }
@@ -283,6 +286,9 @@ where
                     }
                     -cost
                 }
+                // An index at or past `length` means the caller understated it. Reject, rather than
+                // let the subtraction collapse to zero remaining hops and waive funding entirely.
+                index if index >= length => -cost,
                 // First edge and intermediaries share the same funding requirement
                 index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
             }),
@@ -1257,6 +1263,22 @@ mod tests {
         // drained relay.
         let value =
             Direction::ForwardWithoutSelfLoopback.build(2, None)?.into_value_fn()(1.0, &funded_with(0), path_index);
+        assert!(
+            value < 0.0,
+            "index {path_index} exceeds a declared length of 2 and must be rejected, got {value}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    fn require_funding_should_reject_an_index_past_the_declared_length(
+        #[values(Direction::Forward, Direction::Returning)] direction: Direction,
+        #[values(2, 5)] path_index: usize,
+    ) -> anyhow::Result<()> {
+        // Same underflow guard as `forward_without_self_loopback`: `length - index - 1` must never
+        // run with `index >= length`, which would wrap on `usize` and, at a zero ticket face value,
+        // waive the funding requirement entirely instead of rejecting the out-of-range edge.
+        let value = direction.build(2, None)?.into_value_fn()(1.0, &funded_with(0), path_index);
         assert!(
             value < 0.0,
             "index {path_index} exceeds a declared length of 2 and must be rejected, got {value}"
