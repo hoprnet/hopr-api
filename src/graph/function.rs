@@ -187,9 +187,9 @@ where
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
     ///   is applied when immediate QoS data is available.
     /// - **Intermediate edges**: require a funding balance; penalize when unprobed.
-    /// - **All edges but the last**: additionally scaled by the relayer's health (see
-    ///   [`EdgeObservableRead::health`]); an unusable relayer rejects the edge. The last edge leads to
-    ///   the destination, which is not avoided for how it fares as a relayer.
+    /// - **All edges but the last**: additionally scaled by the relayer's health (see [`EdgeObservableRead::health`]);
+    ///   an unusable relayer rejects the edge. The last edge leads to the destination, which is not avoided for how it
+    ///   fares as a relayer.
     pub fn forward(
         length: std::num::NonZeroUsize,
         penalty: f64,
@@ -283,8 +283,8 @@ where
     /// - **Last edge** (relay -> me): requires immediate connectivity; applies the ack rate modifier.
     /// - **All other edges**: require a funding balance; the `penalty` penalizing multiplier is applied when probe
     ///   scores are absent.
-    /// - **All edges but the last**: additionally scaled by the relayer's health (see
-    ///   [`EdgeObservableRead::health`]); an unusable relayer rejects the edge.
+    /// - **All edges but the last**: additionally scaled by the relayer's health (see [`EdgeObservableRead::health`]);
+    ///   an unusable relayer rejects the edge.
     pub fn returning(
         length: std::num::NonZeroUsize,
         penalty: f64,
