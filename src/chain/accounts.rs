@@ -1,5 +1,6 @@
 use futures::{future::BoxFuture, stream::BoxStream};
 use hopr_types::{
+    chain::prelude::Erc777Payload,
     crypto::prelude::{ChainKeypair, OffchainKeypair, OffchainPublicKey},
     primitive::prelude::{Address, HoprBalance},
 };
@@ -72,12 +73,12 @@ pub trait ChainWriteAccountOperations {
     ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>;
 
     /// Sends token currency from the Safe or node account (depends on the used `PayloadGenerator`)
-    /// via ERC777 `send`, passing `data` to the recipient's `tokensReceived` hook.
-    async fn send(
+    /// via ERC777 `send`, with `payload` as the data for the recipient's `tokensReceived` hook.
+    async fn send_erc777(
         &self,
         balance: HoprBalance,
         recipient: &Address,
-        data: &[u8],
+        payload: &Erc777Payload,
     ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error>;
 
     /// Withdraws native or token currency from the `signer` to `recipient` in a single transaction.
