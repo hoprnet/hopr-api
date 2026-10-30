@@ -2736,9 +2736,8 @@ dependencies = [
 
 [[package]]
 name = "hopr-types"
-version = "4.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9edbc7eef689f0dde57fb481404f15b671f0877dd75ff1e88c125f19a09efaf7"
+version = "4.1.1"
+source = "git+https://github.com/0xCurvy/hopr-types.git?branch=lazar%2Fshield-router#13eb853c4afac7cc357d2c9d45411fe3d04bc6c4"
 dependencies = [
  "aes",
  "anyhow",

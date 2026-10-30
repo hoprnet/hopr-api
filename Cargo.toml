@@ -117,3 +117,7 @@ codegen-units = 1
 # make insta snapshots faster
 [profile.dev.package]
 insta.opt-level = 3
+
+# Local verification of hoprnet/hopr-types#128 until released. Not for merge.
+[patch.crates-io]
+hopr-types = { git = "https://github.com/0xCurvy/hopr-types.git", branch = "lazar/shield-router" }

@@ -36,6 +36,20 @@ pub type DepositNotification<'a, P, E> = BoxFuture<'a, Result<(PixAddressId, P, 
 /// Per-item outcomes of a batch [`DepositPool`] operation.
 pub type BatchOutcomes<R, E> = Vec<Result<(PixAddressId, R), E>>;
 
+/// Where an in-pool transfer draws from.
+///
+/// A pool holds funds in two kinds of places: deposits owned by a PIX keypair `K`, and its own
+/// **funding**, which is what [`DepositPool::fund`] moves from the node's Safe into the pool and
+/// what [`DepositPool::available_balance`] measures. A privacy pool keeps the funding as notes
+/// owned by the pool's own identity; a plain pool's funding is the Safe itself.
+#[derive(Clone, Copy, Debug)]
+pub enum PoolTransferSource<'a, K> {
+    /// A deposit owned by `key`, identified by `id`.
+    Deposit { id: &'a PixAddressId, key: &'a K },
+    /// The pool's own funding.
+    Funding,
+}
+
 /// Contains abstraction over the deposit pool from PIX.
 ///
 /// The funds within this pool are represented by the given keypair `K`.
@@ -77,16 +91,45 @@ where
     /// Generates additional deposit data identified by `id`.
     async fn generate_deposit_data(&self, _id: &PixAddressId) -> Result<Self::PoolDepositData, Self::Error>;
 
-    /// Deposits `amount` of funds from node's Safe to the given `dst` deposit address.
+    /// Moves `amount` from the node's Safe into the pool's own funding, from which
+    /// [`PoolTransferSource::Funding`] transfers draw.
+    ///
+    /// This is the only operation that takes value out of the Safe on the pool's behalf; a pool
+    /// never funds itself. A pool whose funding *is* the Safe has nothing to move it into and
+    /// refuses. Calling it again adds to the funding rather than replacing it.
+    async fn fund(&self, amount: HoprBalance) -> Result<(), Self::Error>;
+
+    /// What the pool's funding holds, as the pool itself accounts for it.
+    ///
+    /// This is the pool's own ledger, not a settled on-chain figure: a privacy pool counts a
+    /// funding note from the moment its shield is submitted, before it is spendable, and may
+    /// still count notes it has committed to a transfer that has not settled. A caller deciding
+    /// from this whether to [`fund`](Self::fund) should therefore keep a margin rather than fund
+    /// to the exact amount it needs.
+    async fn available_balance(&self) -> Result<HoprBalance, Self::Error>;
+
+    /// Deposits `amount` of funds to the given `dst` deposit address.
+    ///
+    /// By default a [transfer from the funding](PoolTransferSource::Funding), which is where a
+    /// deposit is paid from. A pool whose funding *is* the Safe pays straight from it instead.
     async fn deposit_funds_to(
         &self,
         id: &PixAddressId,
         dst: &K::Public,
         amount: HoprBalance,
         additional_data: Self::PoolDepositData,
-    ) -> Result<Self::Receipt, Self::Error>;
+    ) -> Result<Self::Receipt, Self::Error> {
+        self.pool_transfer(
+            PoolTransferSource::Funding,
+            id,
+            dst.clone(),
+            additional_data,
+            Some(amount),
+        )
+        .await
+    }
 
-    /// Performs batch deposit of funds from node's Safe to multiple deposit addresses.
+    /// Performs batch deposit of funds to multiple deposit addresses.
     ///
     /// This default implementation simply concurrently calls `deposit_funds_to`.
     /// Implementors may choose a more efficient pool-native batching.
@@ -145,13 +188,18 @@ where
         Ok(join_all(futures).await)
     }
 
-    /// Transfers the funds from the deposit owned by `key` into another address within the pool.
+    /// Transfers funds from `src` into the `dst` deposit address, within the pool.
     ///
-    /// If `amount` is `None`, the entire deposit balance is transferred.
+    /// With [`PoolTransferSource::Funding`] this is how a PIX deposit is paid for: the pool's
+    /// funding, put there by [`fund`](Self::fund), is moved to the destination without touching
+    /// the Safe. With [`PoolTransferSource::Deposit`] it moves a deposit owned by a key.
+    ///
+    /// If `amount` is `None`, the entire source balance is transferred where the pool can do that
+    /// in one transfer: always from a deposit; from the funding only if the pool allows it, since
+    /// a privacy pool pays a transfer from one note plus fees and refuses `None` there.
     async fn pool_transfer(
         &self,
-        src_id: &PixAddressId,
-        key: &K,
+        src: PoolTransferSource<'_, K>,
         dst_id: &PixAddressId,
         dst: K::Public,
         additional_dst_data: Self::PoolDepositData,
@@ -176,7 +224,7 @@ where
             let dst_data = additional_dst_data.clone();
             let dst_id = *dst_id;
             async move {
-                self.pool_transfer(id, key, &dst_id, dst, dst_data, None)
+                self.pool_transfer(PoolTransferSource::Deposit { id, key }, &dst_id, dst, dst_data, None)
                     .await
                     .map(|receipt| (*id, receipt))
             }
@@ -293,20 +341,39 @@ mod tests {
             }
         }
 
+        async fn fund(&self, _amount: HoprBalance) -> Result<(), Self::Error> {
+            Ok(())
+        }
+
+        async fn available_balance(&self) -> Result<HoprBalance, Self::Error> {
+            Ok(HoprBalance::zero())
+        }
+
         async fn pool_transfer(
             &self,
-            src_id: &PixAddressId,
-            key: &BjjKeypair,
-            _dst_id: &PixAddressId,
-            _dst: BjjPublicKey,
+            src: PoolTransferSource<'_, BjjKeypair>,
+            dst_id: &PixAddressId,
+            dst: BjjPublicKey,
             _additional_dst_data: Self::PoolDepositData,
-            _amount: Option<HoprBalance>,
+            amount: Option<HoprBalance>,
         ) -> Result<Self::Receipt, Self::Error> {
-            self.seen.lock().unwrap().push(*src_id);
-            if self.would_fail(key.public()) {
-                Err(MockError)
-            } else {
-                Ok(HoprBalance::new_base(1))
+            match src {
+                PoolTransferSource::Deposit { id, key } => {
+                    self.seen.lock().unwrap().push(*id);
+                    if self.would_fail(key.public()) {
+                        Err(MockError)
+                    } else {
+                        Ok(HoprBalance::new_base(1))
+                    }
+                }
+                PoolTransferSource::Funding => {
+                    self.seen.lock().unwrap().push(*dst_id);
+                    if self.would_fail(&dst) {
+                        Err(MockError)
+                    } else {
+                        Ok(amount.unwrap_or_else(HoprBalance::zero))
+                    }
+                }
             }
         }
     }
@@ -502,10 +569,17 @@ mod tests {
                 Err(MockError)
             }
 
+            async fn fund(&self, _amount: HoprBalance) -> Result<(), Self::Error> {
+                Ok(())
+            }
+
+            async fn available_balance(&self) -> Result<HoprBalance, Self::Error> {
+                Ok(HoprBalance::zero())
+            }
+
             async fn pool_transfer(
                 &self,
-                _src_id: &PixAddressId,
-                _key: &BjjKeypair,
+                _src: PoolTransferSource<'_, BjjKeypair>,
                 _dst_id: &PixAddressId,
                 _dst: BjjPublicKey,
                 _additional_dst_data: Self::PoolDepositData,
