@@ -8,5 +8,6 @@ path_index: 1
 observations:
   immediate: ~
   intermediate: ~
+  health: ~
 initial_value: 1
 result_value: 0.5

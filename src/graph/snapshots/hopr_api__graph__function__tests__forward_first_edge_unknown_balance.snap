@@ -13,5 +13,6 @@ observations:
   intermediate:
     balance: ~
     score: 0.95
+  health: ~
 initial_value: 1
 result_value: -1

@@ -117,6 +117,13 @@ pub trait EdgeObservableRead {
     /// balance or connectivity update creates a stream without recording a probe, and averaging
     /// against that empty stream halves every edge only one stream can observe.
     fn score(&self) -> Option<f64>;
+
+    /// How usable the edge's destination is as a relayer, in `[0.0, 1.0]`: `0.0` unusable, `1.0`
+    /// healthy, `None` not judged. Judged by the graph's owner from its own traffic; see
+    /// [`NetworkGraphUpdate::record_node_health`].
+    fn health(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// Combined trait for full read/write access to edge observations.
@@ -304,6 +311,20 @@ pub trait NetworkGraphUpdate {
     fn record_node<N>(&self, update: N)
     where
         N: MeasurableNode + Clone + Send + Sync + 'static;
+
+    /// Records how usable `node` is as a relayer, in `[0.0, 1.0]`, as judged by the graph's owner
+    /// from its own traffic. Every edge into `node` reports it through [`EdgeObservableRead::health`].
+    fn record_node_health(&self, node: &hopr_types::crypto::types::OffchainPublicKey, health: f64) {
+        let _ = (node, health);
+    }
+
+    /// [`record_node_health`](Self::record_node_health) for several nodes at once, so an
+    /// implementation can apply them under one write.
+    fn record_nodes_health(&self, healths: &[(hopr_types::crypto::types::OffchainPublicKey, f64)]) {
+        for (node, health) in healths {
+            self.record_node_health(node, *health);
+        }
+    }
 }
 
 /// A fold-like value function for graph traversal path scoring.
@@ -402,4 +423,46 @@ pub trait NetworkGraphConnectivity {
     /// included. Disconnected subgraphs that cannot be routed through are
     /// excluded.
     fn reachable_edges(&self) -> Vec<(Self::NodeId, Self::NodeId, Self::Observed)>;
+}
+
+#[cfg(test)]
+mod tests {
+    use hopr_types::crypto::{
+        prelude::{Keypair, OffchainKeypair},
+        types::OffchainPublicKey,
+    };
+
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordedHealth(std::sync::Mutex<Vec<(OffchainPublicKey, f64)>>);
+
+    impl NetworkGraphUpdate for RecordedHealth {
+        fn set_ticket_face_value(&self, _: Balance) {}
+
+        fn record_edge<N, P>(&self, _: MeasurableEdge<N, P>)
+        where
+            N: MeasurablePeer + Clone + Send + Sync + 'static,
+            P: MeasurablePath + Clone + Send + Sync + 'static,
+        {
+        }
+
+        fn record_node<N>(&self, _: N)
+        where
+            N: MeasurableNode + Clone + Send + Sync + 'static,
+        {
+        }
+
+        fn record_node_health(&self, node: &OffchainPublicKey, health: f64) {
+            self.0.lock().unwrap().push((*node, health));
+        }
+    }
+
+    #[test]
+    fn record_nodes_health_should_record_each_node_in_order() {
+        let (a, b) = (*OffchainKeypair::random().public(), *OffchainKeypair::random().public());
+        let graph = RecordedHealth::default();
+        graph.record_nodes_health(&[(a, 0.0), (b, 0.25)]);
+        assert_eq!(*graph.0.lock().unwrap(), vec![(a, 0.0), (b, 0.25)]);
+    }
 }
