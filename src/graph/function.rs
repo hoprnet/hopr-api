@@ -249,7 +249,8 @@ where
                 -cost
             }
             // An index at or past `length` means the caller understated it. Reject, rather than
-            // let the subtraction wrap on `usize` and waive the funding requirement.
+            // let the subtraction wrap on `usize` and, at a zero ticket face value, waive the
+            // funding requirement entirely instead of rejecting the out-of-range edge.
             index if index >= length => -cost,
             index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
         };
@@ -308,6 +309,9 @@ where
                 }
                 -cost
             }
+            // An index at or past `length` means the caller understated it. Reject, rather than
+            // let the subtraction wrap on `usize` and, at a zero ticket face value, waive the
+            // funding requirement entirely instead of rejecting the out-of-range edge.
             index if index >= length => -cost,
             // First edge and intermediaries share the same funding requirement
             index => require_funding(observation, cost, penalty, length - index - 1, ticket_face_value),
