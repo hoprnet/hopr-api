@@ -424,3 +424,45 @@ pub trait NetworkGraphConnectivity {
     /// excluded.
     fn reachable_edges(&self) -> Vec<(Self::NodeId, Self::NodeId, Self::Observed)>;
 }
+
+#[cfg(test)]
+mod tests {
+    use hopr_types::crypto::{
+        prelude::{Keypair, OffchainKeypair},
+        types::OffchainPublicKey,
+    };
+
+    use super::*;
+
+    #[derive(Default)]
+    struct RecordedHealth(std::sync::Mutex<Vec<(OffchainPublicKey, f64)>>);
+
+    impl NetworkGraphUpdate for RecordedHealth {
+        fn set_ticket_face_value(&self, _: Balance) {}
+
+        fn record_edge<N, P>(&self, _: MeasurableEdge<N, P>)
+        where
+            N: MeasurablePeer + Clone + Send + Sync + 'static,
+            P: MeasurablePath + Clone + Send + Sync + 'static,
+        {
+        }
+
+        fn record_node<N>(&self, _: N)
+        where
+            N: MeasurableNode + Clone + Send + Sync + 'static,
+        {
+        }
+
+        fn record_node_health(&self, node: &OffchainPublicKey, health: f64) {
+            self.0.lock().unwrap().push((*node, health));
+        }
+    }
+
+    #[test]
+    fn record_nodes_health_should_record_each_node_in_order() {
+        let (a, b) = (*OffchainKeypair::random().public(), *OffchainKeypair::random().public());
+        let graph = RecordedHealth::default();
+        graph.record_nodes_health(&[(a, 0.0), (b, 0.25)]);
+        assert_eq!(*graph.0.lock().unwrap(), vec![(a, 0.0), (b, 0.25)]);
+    }
+}

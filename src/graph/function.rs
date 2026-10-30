@@ -39,16 +39,16 @@ fn score_or_penalize(cost: f64, score: Option<f64>, penalty: f64) -> f64 {
     cost * multiplier.max(MEASURED_DEAD_FLOOR)
 }
 
-/// Scales the value of an edge into a relayer by that relayer's health; an unusable relayer rejects
-/// the edge, and an already rejected edge stays rejected.
+/// Scales the value of an edge into a relayer by its health, clamped to `[0.0, 1.0]`; `0.0` rejects
+/// the edge and a NaN health counts as unjudged. A rejected edge (`<= 0.0`) is passed through:
+/// negating it to reject would accept it instead.
 fn scale_by_health(value: f64, health: Option<f64>) -> f64 {
-    if value <= 0.0 {
-        return value;
+    match health.filter(|health| !health.is_nan()) {
+        _ if value <= 0.0 => value,
+        Some(health) if health <= 0.0 => -value,
+        Some(health) => value * health.min(1.0),
+        None => value,
     }
-    if let Some(health) = health {
-        return if health <= 0.0 { -value } else { value * health.min(1.0) };
-    }
-    value
 }
 
 /// Applies the ack rate as a value modifier for immediate edges.
@@ -226,7 +226,7 @@ where
                     && immediate.is_connected() != Some(false)
                 {
                     let base = score_or_penalize(cost, immediate.score(), penalty);
-                    // Same as above: enforce ack rate for 1-hop routes
+                    // Same as above: a direct route (one edge, no relay) also enforces the ack rate
                     if length == 1 {
                         return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
                     }
@@ -1074,14 +1074,34 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn a_rejected_edge_should_stay_rejected_whatever_the_health() -> anyhow::Result<()> {
-        let unfunded_but_healthy = Observations {
-            health: Some(1.0),
-            ..unfunded()
-        };
-        assert!(edge_value(Direction::Forward, 3, 1, &unfunded_but_healthy)? < 0.0);
+    #[rstest]
+    fn a_rejected_edge_should_stay_rejected_whatever_the_health(
+        #[values(Direction::Forward, Direction::Returning, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(None, Some(0.0), Some(-0.0), Some(0.5), Some(1.0), Some(-12323.0), Some(f64::NAN), Some(f64::INFINITY))]
+        health: Option<f64>,
+    ) -> anyhow::Result<()> {
+        let unfunded = Observations { health, ..unfunded() };
+        assert!(edge_value(direction, 3, 1, &unfunded)? < 0.0, "health {health:?}");
         Ok(())
+    }
+
+    #[rstest]
+    #[case::rejected_dead(-12323.0, Some(0.0), -12323.0)]
+    #[case::rejected_negative_health(-12323.0, Some(-12323.0), -12323.0)]
+    #[case::rejected_healthy(-12323.0, Some(1.0), -12323.0)]
+    #[case::zero_dead(0.0, Some(0.0), 0.0)]
+    #[case::dead(10.0, Some(0.0), -10.0)]
+    #[case::negative_zero(10.0, Some(-0.0), -10.0)]
+    #[case::negative(10.0, Some(-12323.0), -10.0)]
+    #[case::negative_infinity(10.0, Some(f64::NEG_INFINITY), -10.0)]
+    #[case::degraded(10.0, Some(0.25), 2.5)]
+    #[case::healthy(10.0, Some(1.0), 10.0)]
+    #[case::above_one(10.0, Some(12323.0), 10.0)]
+    #[case::infinity(10.0, Some(f64::INFINITY), 10.0)]
+    #[case::nan(10.0, Some(f64::NAN), 10.0)]
+    #[case::unjudged(10.0, None, 10.0)]
+    fn scale_by_health_should_handle_any_value(#[case] value: f64, #[case] health: Option<f64>, #[case] expected: f64) {
+        assert_eq!(scale_by_health(value, health), expected);
     }
 
     #[test]
