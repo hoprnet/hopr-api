@@ -10,5 +10,6 @@ observations:
   intermediate:
     balance: "1000"
     score: ~
+  health: ~
 initial_value: 1
 result_value: 0.5
