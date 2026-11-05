@@ -5,6 +5,7 @@
 {
   builders,
   nixLib,
+  pkgs,
   self,
   lib,
 }:
@@ -65,10 +66,37 @@ in
 
   clippy = clippyDerivation;
 
-  unit-test = buildLib builders.local {
-    src = testSrc;
-    runTests = true;
+  doc = buildLib builders.local {
+    runDoc = true;
   };
+
+  deny = buildLib builders.local {
+    runDeny = true;
+  };
+
+  test =
+    (buildLib builders.local {
+      src = testSrc;
+      runTests = true;
+      extraNativeBuildInputs = [ pkgs.cargo-nextest ];
+    }).overrideAttrs
+      (_: {
+        checkPhase = ''
+          cargo nextest run --workspace --all-features --no-fail-fast
+        '';
+      });
+
+  # nextest does not run doctests
+  test-doc =
+    (buildLib builders.local {
+      src = testSrc;
+      runTests = true;
+    }).overrideAttrs
+      (_: {
+        checkPhase = ''
+          cargo test --doc --workspace --all-features
+        '';
+      });
 
   docs = builders.localNightly.callPackage nixLib.mkRustPackage (buildArgs // { buildDocs = true; });
 
@@ -80,7 +108,7 @@ in
       rev
       ;
     runCoverage = true;
-    cargoExtraArgs = "--all-features --lib";
+    cargoExtraArgs = "--all-features";
   };
 
   # Cross-compiled rlib packages
