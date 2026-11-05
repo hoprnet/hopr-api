@@ -192,5 +192,7 @@ jobs:
           # `build-library` are input-gated on `changes.outputs.rust`; when every
           # inner job of the reusable workflow skips, the caller job reports
           # skipped as well. Their skip is allowed only for a non-Rust change;
-          # a Rust change still has to run both.
-          allowed-skips: ${{ needs.changes.outputs.rust == 'true' && 'validate-pr-title, label' || 'validate-pr-title, label, tests, build-library' }}
+          # a Rust change still has to run both. The coverage job also skips on
+          # draft PRs, so `tests` may skip while the PR is a draft; a draft
+          # cannot merge and ready_for_review re-runs this workflow.
+          allowed-skips: ${{ needs.changes.outputs.rust != 'true' && 'validate-pr-title, label, tests, build-library' || github.event.pull_request.draft == true && 'validate-pr-title, label, tests' || 'validate-pr-title, label' }}
