@@ -76,7 +76,7 @@ pub struct ForwardAndReturnPath {
 /// **Counts, not single events.** A round-trip is minted per SURB and a packet carries several, so
 /// reporting each one individually would take a graph write lock thousands of times a second on the
 /// packet hot path. Senders accumulate cheaply and report periodically, exactly as
-/// [`EdgeWeightType::ImmediateProtocolConformance`](super::traits::EdgeWeightType::ImmediateProtocolConformance) does for packet/ack counts.
+/// `EdgeWeightType::ImmediateProtocolConformance` does for packet/ack counts.
 #[derive(Debug, Copy, Clone)]
 pub struct SurbTelemetry {
     /// The legs these round-trips traversed.
