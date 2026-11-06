@@ -95,6 +95,10 @@ jobs:
           filters: |
             rust:
               - "src/**"
+              - "README.md"
+              - "**/*.rs"
+              - "**/*.toml"
+              - "**/*.snap"
               - "Cargo.toml"
               - "Cargo.lock"
               - "rust-toolchain.toml"
