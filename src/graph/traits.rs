@@ -78,6 +78,19 @@ pub trait EdgeProtocolObservable {
     ///
     /// See [`Balance`] for why this is not pre-divided into a ticket count.
     fn balance(&self) -> Option<Balance>;
+
+    /// Share of the loopbacks routed over this edge that returned, over a recent window.
+    ///
+    /// A loopback that goes out and never comes back is evidence against every edge on it, and one
+    /// that returns is evidence for every edge on it. Summing the returned and the failed loopbacks
+    /// over the window gives the ratio, so `Some(0.0)` means loops were sent through this edge and
+    /// none returned, while anything above zero means it carries traffic.
+    ///
+    /// `None` when too few loopbacks crossed the edge to say, which is not the same as `Some(0.0)`.
+    /// Implementors that do not track loopbacks keep this default.
+    fn loopback_rate(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// Trait for reading immediate hop protocol conformance metrics.
