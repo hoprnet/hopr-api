@@ -411,6 +411,8 @@ where
     /// - **First edge**: same as [`EdgeValueFn::forward`].
     /// - **All other edges**: require a funding balance; the `penalty` penalizing multiplier is applied when probe
     ///   scores are absent.
+    /// - **Every edge but the last**: a relay none of whose loopbacks or traffic over the edge returned is starved, see
+    ///   `min_loopback_rate`. The last index is the edge the caller appends back to `me`.
     ///
     /// `length` counts edges in the **finished** path, including any the caller appends after
     /// traversal — `h + 1` for a loopback of `h` hops. Needed to size each edge's ticket.
