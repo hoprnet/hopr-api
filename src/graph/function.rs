@@ -207,7 +207,7 @@ where
     /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
     /// to edges lacking probe-based quality observations.
     ///
-    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the rate below which the first relay is starved to the
+    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the rate below which a relay is starved to the
     /// measured-dead floor. It is separate from `min_ack_rate`: a relay that rejects our packets still answers pings
     /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
     /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
@@ -220,9 +220,10 @@ where
     /// threshold are rejected.
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
-    ///   of the immediate and intermediate observations, then applies the ack rate modifier. A relay that neither
-    ///   loopbacks nor traffic show to be working is starved, see `min_loopback_rate`. Not applied to a direct route,
-    ///   which has no relay.
+    ///   of the immediate and intermediate observations, then applies the ack rate modifier.
+    /// - **Every edge but the last**: leads into a relay, which is starved when neither loopbacks nor traffic over the
+    ///   edge show it to be working, see `min_loopback_rate`. The last edge leads to the destination, and a direct
+    ///   route has no relay.
     /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
     ///   is applied when immediate QoS data is available.
@@ -302,14 +303,14 @@ where
             value_fn: Arc::new(move |cost, observation, path_index| {
                 let value = edge_value(cost, observation, path_index);
                 if path_index + 1 < length {
-                    let value = scale_by_health(value, observation.health());
-                    // The first relay of a relayed path: it is the one whose loopbacks say whether it
-                    // delivers. A direct route (length 1) never reaches this branch.
-                    if path_index == 0 {
-                        apply_loopback_rate(value, observation, min_loopback_rate)
-                    } else {
-                        value
-                    }
+                    // Every edge but the one into the destination leads into a relay, and what travels
+                    // over it says whether that relay delivers. A direct route (length 1) never
+                    // reaches this branch.
+                    apply_loopback_rate(
+                        scale_by_health(value, observation.health()),
+                        observation,
+                        min_loopback_rate,
+                    )
                 } else {
                     value
                 }
@@ -395,7 +396,7 @@ where
     /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
     /// to edges lacking probe-based quality observations.
     ///
-    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the rate below which the first relay is starved to the
+    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the rate below which a relay is starved to the
     /// measured-dead floor. It is separate from `min_ack_rate`: a relay that rejects our packets still answers pings
     /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
     /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
@@ -454,7 +455,9 @@ where
             min: Some(0.0),
             value_fn: Arc::new(move |cost, observation, path_index| {
                 let value = scale_by_health(edge_value(cost, observation, path_index), observation.health());
-                if path_index == 0 {
+                // `length` counts the finished path, so the last index is the edge the caller appends
+                // back to `me`, which is not a relay anyone chooses.
+                if path_index + 1 < length {
                     apply_loopback_rate(value, observation, min_loopback_rate)
                 } else {
                     value
