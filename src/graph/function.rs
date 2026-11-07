@@ -1550,16 +1550,39 @@ mod tests {
     }
 
     #[rstest]
-    fn only_the_first_relay_of_a_forward_path_should_be_judged(#[values(2, 3)] hops: usize) -> anyhow::Result<()> {
-        // Which relay on a loop dropped it is unknowable, and later edges already scale by their own
-        // score, so they keep their value.
-        for index in 1..hops {
-            assert_eq!(
-                routed_value(Direction::Forward, hops + 1, index, &looping(0.0))?,
-                unrouted_value(Direction::Forward, hops + 1, index, &looping(0.0))?,
-                "{hops} hop(s), edge {index}: only the first hop is judged"
+    fn every_relay_of_a_forward_path_should_be_judged_by_loopbacks(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(1, 2, 3)] hops: usize,
+    ) -> anyhow::Result<()> {
+        // Every edge but the one into the destination leads into a relay, and an edge on loops that
+        // never returned says that relay is dead. The score alone does not: it falls gradually with
+        // a moving average, while the window reads zero at once.
+        for index in 0..hops {
+            let starved = routed_value(direction, hops + 1, index, &looping(0.0))?;
+            let honest = routed_value(direction, hops + 1, index, &looping(1.0))?;
+            assert!(
+                starved > 0.0,
+                "{direction:?}, {hops} hop(s), relay {index}: a starved edge must stay a candidate"
+            );
+            assert!(
+                starved / (starved + honest) < 1e-8,
+                "{direction:?}, {hops} hop(s), relay {index}: a relay whose loopbacks never return must be starved \
+                 wherever it sits"
             );
         }
+        Ok(())
+    }
+
+    #[rstest]
+    fn the_edge_into_the_destination_should_not_be_judged_by_loopbacks(
+        #[values(1, 2, 3)] hops: usize,
+    ) -> anyhow::Result<()> {
+        // The destination relays nothing for us, so loops that fail on the way to it say nothing.
+        assert_eq!(
+            routed_value(Direction::Forward, hops + 1, hops, &looping(0.0))?,
+            unrouted_value(Direction::Forward, hops + 1, hops, &looping(0.0))?,
+            "{hops} hop(s): the last edge is not a relay"
+        );
         Ok(())
     }
 
