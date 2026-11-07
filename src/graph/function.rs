@@ -220,8 +220,8 @@ where
     /// threshold are rejected.
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
-    ///   of the immediate and intermediate observations, then applies the ack rate modifier. A relay
-    ///   that neither loopbacks nor traffic show to be working is starved, see `min_loopback_rate`. Not applied to a direct route,
+    ///   of the immediate and intermediate observations, then applies the ack rate modifier. A relay that neither
+    ///   loopbacks nor traffic show to be working is starved, see `min_loopback_rate`. Not applied to a direct route,
     ///   which has no relay.
     /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
@@ -1426,7 +1426,8 @@ mod tests {
         let share = starved / (starved + honest);
         assert!(
             share < 1e-8,
-            "{direction:?}, {hops} hop(s): a relay none of whose loopbacks return must draw a negligible share, got {share}"
+            "{direction:?}, {hops} hop(s): a relay none of whose loopbacks return must draw a negligible share, got \
+             {share}"
         );
         Ok(())
     }
@@ -1463,7 +1464,8 @@ mod tests {
         if starved {
             assert!(
                 routed > 0.0 && routed / unrouted < 1e-8,
-                "{direction:?}, {hops} hop(s), probes {probes:?}, traffic {traffic:?}: must be starved, got {routed} against {unrouted}"
+                "{direction:?}, {hops} hop(s), probes {probes:?}, traffic {traffic:?}: must be starved, got {routed} \
+                 against {unrouted}"
             );
         } else {
             assert_eq!(
