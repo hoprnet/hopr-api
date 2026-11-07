@@ -86,7 +86,7 @@ pub trait EdgeProtocolObservable {
     /// over the window gives the ratio, so `Some(0.0)` means loops were sent through this edge and
     /// none returned, while anything above zero means it carries traffic.
     ///
-    /// `None` when too few loopbacks crossed the edge to say, which is not the same as `Some(0.0)`.
+    /// `None` when no loopback crossed the edge in the window, which is not the same as `Some(0.0)`.
     /// Implementors that do not track loopbacks keep this default.
     fn loopback_rate(&self) -> Option<f64> {
         None
