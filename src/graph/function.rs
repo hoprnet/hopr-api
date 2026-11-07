@@ -69,9 +69,8 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
 /// A relay that rejects our packets still answers pings and signs an ack for every packet, so only
 /// the loopbacks show that it delivers nothing. The value drops to [`MEASURED_DEAD_FLOOR`] times
 /// itself: negligible against an honest relay, yet positive, so the edge stays a candidate (RFC-0010
-/// §4.2.3). No loopback evidence leaves the value unchanged. A zero `min_rate` never starves, which
-/// is how probe generation keeps the edge probed at full weight so it can recover. A value already
-/// rejected is passed through.
+/// §4.2.3). No loopback evidence leaves the value unchanged, and a zero `min_rate` never starves. A
+/// value already rejected is passed through.
 fn apply_loopback_rate(value: f64, loopback_rate: Option<f64>, min_rate: f64) -> f64 {
     match loopback_rate {
         Some(rate) if value > 0.0 && rate < min_rate => value * MEASURED_DEAD_FLOOR,
@@ -150,6 +149,8 @@ pub struct EdgeValueFn<C, W> {
     initial: C,
     min: Option<C>,
     value_fn: BasicValueFn<C, W>,
+    /// Length of the path, when its first edge is that of a relay a loopback threshold may judge.
+    loopback_gate_length: Option<usize>,
 }
 
 impl<C: Clone, W> Clone for EdgeValueFn<C, W> {
@@ -158,6 +159,7 @@ impl<C: Clone, W> Clone for EdgeValueFn<C, W> {
             initial: self.initial.clone(),
             min: self.min.clone(),
             value_fn: Arc::clone(&self.value_fn),
+            loopback_gate_length: self.loopback_gate_length,
         }
     }
 }
@@ -197,10 +199,8 @@ where
     /// threshold are rejected.
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
-    ///   of the immediate and intermediate observations, then applies the ack rate modifier. A relay whose loopbacks
-    ///   mostly fail to return (intermediate delivery rate below `min_ack_rate`) is starved to the measured-dead
-    ///   floor: its pings and acks read healthy even when it rejects our packets. Not applied to a direct route,
-    ///   which has no relay.
+    ///   of the immediate and intermediate observations, then applies the ack rate modifier. A router can also starve a
+    ///   relay whose loopbacks mostly fail to return, see [`EdgeValueFn::with_min_loopback_rate`].
     /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
     ///   is applied when immediate QoS data is available.
@@ -262,8 +262,7 @@ where
                     && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                 {
                     let base = score_or_penalize(cost, observation.score(), penalty);
-                    let value = apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
-                    return apply_loopback_rate(value, intermediate.average_probe_rate(), min_ack_rate);
+                    return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
                 }
                 -cost
             }
@@ -284,6 +283,7 @@ where
                     value
                 }
             }),
+            loopback_gate_length: (length > 1).then_some(length),
         }
     }
 
@@ -346,6 +346,7 @@ where
                     value
                 }
             }),
+            loopback_gate_length: None,
         }
     }
 
@@ -389,8 +390,7 @@ where
                     && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                 {
                     let base = score_or_penalize(cost, observation.score(), penalty);
-                    let value = apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
-                    return apply_loopback_rate(value, intermediate.average_probe_rate(), min_ack_rate);
+                    return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
                 }
                 -cost
             }
@@ -405,7 +405,43 @@ where
             value_fn: Arc::new(move |cost, observation, path_index| {
                 scale_by_health(edge_value(cost, observation, path_index), observation.health())
             }),
+            loopback_gate_length: (length > 1).then_some(length),
         }
+    }
+
+    /// Starves the first relay of a relayed path whose loopback delivery rate is below `min_rate`.
+    ///
+    /// A relay that rejects our packets still answers pings and signs an ack for every packet, so
+    /// neither its ping score nor its ack rate shows it: only the loopbacks routed through it do.
+    /// The rate is the share of loopbacks through the relay that returned, so one that returned 5
+    /// of 10 is alive and is not starved. Below `min_rate` the edge keeps a positive value of
+    /// [`MEASURED_DEAD_FLOOR`] times itself, which leaves it a candidate with a negligible sampling
+    /// share (RFC-0010 §4.2.3).
+    ///
+    /// This is a threshold of its own, unrelated to the `min_ack_rate` the constructors take. It is
+    /// off unless set, so probe generation, which must keep probing a starved relay for it to
+    /// recover, leaves it unset. `min_rate` is clamped to `[0.0, 1.0]`; `0.0` never starves.
+    ///
+    /// Applies to the first edge of [`EdgeValueFn::forward`] and
+    /// [`EdgeValueFn::forward_without_self_loopback`] paths. A direct route has no relay to judge,
+    /// and later edges cannot say which relay on a loop dropped it. [`EdgeValueFn::returning`] is
+    /// left as it is.
+    pub fn with_min_loopback_rate(mut self, min_rate: f64) -> Self {
+        let Some(length) = self.loopback_gate_length else {
+            return self;
+        };
+        let min_rate = min_rate.clamp(0.0, 1.0);
+        let inner = Arc::clone(&self.value_fn);
+        self.value_fn = Arc::new(move |cost, observation, path_index| {
+            let value = inner(cost, observation, path_index);
+            if path_index == 0 && length > 1 {
+                let rate = observation.intermediate_qos().and_then(|q| q.average_probe_rate());
+                apply_loopback_rate(value, rate, min_rate)
+            } else {
+                value
+            }
+        });
+        self
     }
 }
 
@@ -433,8 +469,6 @@ mod tests {
     const TEST_MIN_ACK_RATE: f64 = 0.1;
     /// Probe score well clear of every threshold under test.
     const GOOD_SCORE: f64 = 0.95;
-    /// Poor delivery that still clears [`TEST_MIN_ACK_RATE`], so the edge is down-weighted, not rejected.
-    const DEGRADED_SCORE: f64 = 0.2;
     /// Ack rate comfortably above [`TEST_MIN_ACK_RATE`].
     const GOOD_ACK: f64 = 0.9;
     /// Balance that funds any path length used here.
@@ -1146,13 +1180,10 @@ mod tests {
 
     #[test]
     fn forward_first_edge_should_score_the_aggregate_rather_than_the_better_stream() -> anyhow::Result<()> {
-        // Taking the better of the two streams would hide a failing intermediate entirely, which is
+        // Taking the better of the two streams would hide a dead intermediate entirely, which is
         // the defect the presence rules exist to close. RFC-0014 §4.2 averages when both are
-        // present. Acks are fully accounted for here so the assertion isolates the aggregate. The
-        // intermediate is poor but above the loopback gate: a dead one is rejected outright.
-        let masking = healthy()
-            .with_intermediate(Some(FUNDED), Some(DEGRADED_SCORE))
-            .with_immediate(Some(GOOD_SCORE), Some(1.0));
+        // present. Acks are fully accounted for here so the assertion isolates the aggregate.
+        let masking = dead_intermediate().with_immediate(Some(GOOD_SCORE), Some(1.0));
         let sound = healthy().with_immediate(Some(GOOD_SCORE), Some(1.0));
 
         let masked = edge_value(Direction::Forward, 3, 0, &masking)?;
@@ -1163,7 +1194,7 @@ mod tests {
             "a dead intermediate must cost the edge, not be hidden by a healthy immediate: {masked} vs {intact}"
         );
         assert!(
-            (masked - (GOOD_SCORE + DEGRADED_SCORE) / 2.0).abs() < 1e-9,
+            (masked - (GOOD_SCORE + 0.0) / 2.0).abs() < 1e-9,
             "expected the documented average, got {masked}"
         );
         Ok(())
@@ -1271,7 +1302,51 @@ mod tests {
 
     // A relay that rejects our packets still answers pings and signs an ack for every packet, so its
     // ping score and ack rate read healthy. Only the loopbacks routed through it show that nothing
-    // gets delivered, which is what `dead_intermediate` models.
+    // gets delivered. A router opts in with a loopback threshold, separate from the ack threshold;
+    // probe generation does not, so a starved relay keeps being probed and can recover (RFC-0010
+    // §4.2.3).
+
+    /// Loopback delivery rate below which a router starves a first relay.
+    const TEST_MIN_LOOPBACK_RATE: f64 = 0.1;
+
+    /// A value function as a router builds it: the loopback threshold is set on the object and the
+    /// constructor arguments are unchanged.
+    fn routed_value_fn(
+        direction: Direction,
+        length: usize,
+        min_ack_rate: f64,
+        min_loopback_rate: f64,
+    ) -> anyhow::Result<EdgeValueFn<f64, Observations>> {
+        let length = std::num::NonZeroUsize::new(length).context("path length must be non-zero")?;
+        let value_fn = match direction {
+            Direction::Forward => EdgeValueFn::forward(length, TEST_PENALTY, min_ack_rate, None),
+            Direction::Returning => EdgeValueFn::returning(length, TEST_PENALTY, min_ack_rate, None),
+            Direction::ForwardWithoutSelfLoopback => {
+                EdgeValueFn::forward_without_self_loopback(length, TEST_PENALTY, min_ack_rate, None)
+            }
+        };
+        Ok(value_fn.with_min_loopback_rate(min_loopback_rate))
+    }
+
+    fn routed_value(
+        direction: Direction,
+        length: usize,
+        index: usize,
+        observations: &Observations,
+    ) -> anyhow::Result<f64> {
+        Ok(routed_value_fn(
+            direction,
+            length,
+            TEST_MIN_ACK_RATE,
+            TEST_MIN_LOOPBACK_RATE,
+        )?
+        .into_value_fn()(1.0, observations, index))
+    }
+
+    /// Intermediate stream whose loopbacks mostly fail, over an otherwise healthy relay.
+    fn losing_loopbacks(rate: f64) -> Observations {
+        healthy().with_intermediate(Some(FUNDED), Some(rate))
+    }
 
     #[rstest]
     fn first_relay_whose_loopbacks_never_return_should_be_starved_for_routing(
@@ -1280,8 +1355,8 @@ mod tests {
     ) -> anyhow::Result<()> {
         // Starved, not pruned (RFC-0010 §4.2.3): positive so the edge stays a candidate, negligible
         // against an honest relay so weighted sampling all but never picks it.
-        let starved = edge_value(direction, hops + 1, 0, &dead_intermediate())?;
-        let honest = edge_value(direction, hops + 1, 0, &healthy())?;
+        let starved = routed_value(direction, hops + 1, 0, &dead_intermediate())?;
+        let honest = routed_value(direction, hops + 1, 0, &healthy())?;
 
         assert!(
             starved > 0.0,
@@ -1296,23 +1371,50 @@ mod tests {
     }
 
     #[rstest]
-    fn first_relay_whose_loopbacks_never_return_should_stay_probe_able_at_a_zero_threshold(
+    fn first_relay_should_keep_its_value_without_a_loopback_threshold(
         #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
         #[values(1, 2, 3)] hops: usize,
     ) -> anyhow::Result<()> {
-        // Probe generation passes a zero threshold. A rejected edge is never probed, so it can never
-        // show it recovered (RFC-0010 §4.2.3).
-        let length = std::num::NonZeroUsize::new(hops + 1).context("path length must be non-zero")?;
-        let value_fn = match direction {
-            Direction::Forward => EdgeValueFn::<f64, Observations>::forward(length, TEST_PENALTY, 0.0, None),
-            _ => EdgeValueFn::<f64, Observations>::forward_without_self_loopback(length, TEST_PENALTY, 0.0, None),
-        }
-        .into_value_fn();
-
-        let value = value_fn(1.0, &dead_intermediate(), 0);
+        // Probe generation builds the value function without a threshold. Starving there would stop
+        // loops going through the relay, freezing its rate near zero.
+        let value = direction.build(hops + 1, None)?.into_value_fn()(1.0, &dead_intermediate(), 0);
         assert!(
-            value > 0.0,
-            "{direction:?}, {hops} hop(s): a zero threshold must keep the edge probe-able, got {value}"
+            value > 0.1,
+            "{direction:?}, {hops} hop(s): no threshold must leave the edge at full weight, got {value}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    fn loopback_threshold_should_not_depend_on_the_ack_threshold(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(0.0, TEST_MIN_ACK_RATE, 0.9)] min_ack_rate: f64,
+    ) -> anyhow::Result<()> {
+        let starved = routed_value_fn(direction, 3, min_ack_rate, TEST_MIN_LOOPBACK_RATE)?.into_value_fn()(
+            1.0,
+            &dead_intermediate(),
+            0,
+        );
+        assert!(
+            starved > 0.0 && starved < 1e-6,
+            "{direction:?}, ack threshold {min_ack_rate}: the loopback threshold must starve on its own, got {starved}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    fn first_relay_with_half_its_loopbacks_returning_should_stay_active(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(1, 2, 3)] hops: usize,
+    ) -> anyhow::Result<()> {
+        // 10 loops through the relay, 5 returned: the relay is alive and the rest is loss elsewhere
+        // on those loops.
+        let observed = losing_loopbacks(0.5);
+        let routed = routed_value(direction, hops + 1, 0, &observed)?;
+        let unrouted = direction.build(hops + 1, None)?.into_value_fn()(1.0, &observed, 0);
+        assert_eq!(
+            routed, unrouted,
+            "{direction:?}, {hops} hop(s): a live relay is not starved"
         );
         Ok(())
     }
@@ -1322,7 +1424,7 @@ mod tests {
         #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
         #[values(1, 2, 3)] hops: usize,
     ) -> anyhow::Result<()> {
-        let value = edge_value(direction, hops + 1, 0, &healthy())?;
+        let value = routed_value(direction, hops + 1, 0, &healthy())?;
         assert!(
             value > 0.0,
             "{direction:?}, {hops} hop(s): an honest relay must stay a first hop, got {value}"
@@ -1334,23 +1436,38 @@ mod tests {
     fn direct_route_should_not_be_judged_by_loopbacks() -> anyhow::Result<()> {
         // Zero hops: the single edge is the destination, which relays nothing for us. Loopbacks that
         // fail elsewhere on their loop say nothing about it.
-        let value = edge_value(Direction::Forward, 1, 0, &dead_intermediate())?;
-        assert!(
-            value > 0.0,
-            "a direct peer must not be rejected on loopback evidence, got {value}"
+        let observed = losing_loopbacks(0.05);
+        let routed = routed_value(Direction::Forward, 1, 0, &observed)?;
+        let unrouted = Direction::Forward.build(1, None)?.into_value_fn()(1.0, &observed, 0);
+        assert_eq!(
+            routed, unrouted,
+            "a direct peer must not be starved on loopback evidence"
         );
         Ok(())
     }
 
     #[rstest]
     fn only_the_first_relay_should_be_judged_by_loopbacks(#[values(2, 3)] hops: usize) -> anyhow::Result<()> {
-        // Which relay on a loop dropped it is unknowable, so later hops are not rejected for it.
+        // Which relay on a loop dropped it is unknowable, so later hops keep their value.
+        let observed = losing_loopbacks(0.05);
         for index in 1..hops {
-            let value = edge_value(Direction::Forward, hops + 1, index, &dead_intermediate())?;
-            assert!(
-                value > 0.0,
-                "{hops} hop(s), edge {index}: only the first hop is gated, got {value}"
+            let routed = routed_value(Direction::Forward, hops + 1, index, &observed)?;
+            let unrouted = Direction::Forward.build(hops + 1, None)?.into_value_fn()(1.0, &observed, index);
+            assert_eq!(
+                routed, unrouted,
+                "{hops} hop(s), edge {index}: only the first hop is judged"
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn return_paths_should_not_be_judged_by_loopbacks() -> anyhow::Result<()> {
+        let observed = losing_loopbacks(0.05);
+        for index in 0..2 {
+            let routed = routed_value(Direction::Returning, 2, index, &observed)?;
+            let unrouted = Direction::Returning.build(2, None)?.into_value_fn()(1.0, &observed, index);
+            assert_eq!(routed, unrouted, "return edge {index} is not a first hop");
         }
         Ok(())
     }
