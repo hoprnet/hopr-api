@@ -74,16 +74,17 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
 /// so a collapse does not outweigh probes that came back.
 ///
 /// Dead is a rate below `min_rate` and alive is a rate at or above it, so anything above zero is a
-/// relay that carries traffic. Below it the value drops to [`MEASURED_DEAD_FLOOR`] times itself:
-/// negligible against an honest relay, yet positive, so the edge stays a candidate (RFC-0010
-/// §4.2.3). No evidence leaves the value unchanged, and a zero `min_rate` never starves, which is
+/// relay that carries traffic. A NaN rate is no evidence, as it is for [`scale_by_health`]. Below it the value drops to
+/// [`MEASURED_DEAD_FLOOR`] times itself: negligible against an honest relay, yet positive, so the edge stays a
+/// candidate (RFC-0010 §4.2.3). No evidence leaves the value unchanged, and a zero `min_rate` never starves, which is
 /// how probe generation keeps probing a starved relay so it can recover. A value already rejected
 /// is passed through.
 fn apply_loopback_rate<W: EdgeObservableRead>(value: f64, observation: &W, min_rate: f64) -> f64 {
     let Some(intermediate) = observation.intermediate_qos() else {
         return value;
     };
-    let rates = [intermediate.loopback_rate(), intermediate.traffic_rate()];
+    let rates =
+        [intermediate.loopback_rate(), intermediate.traffic_rate()].map(|rate| rate.filter(|rate| !rate.is_nan()));
     let dead = rates.iter().any(|rate| rate.is_some_and(|rate| rate < min_rate));
     let alive = rates.iter().any(|rate| rate.is_some_and(|rate| rate >= min_rate));
 
@@ -211,7 +212,7 @@ where
     /// measured-dead floor. It is separate from `min_ack_rate`: a relay that rejects our packets still answers pings
     /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
     /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
-    /// only when one is below it and neither is above. Routers pass a tiny positive, so only a relay with nothing
+    /// only when one is below it and neither reads alive. Routers pass a tiny positive, so only a relay with nothing
     /// returning qualifies. Probe generation passes `0.0`, which never starves, so a starved relay keeps being probed
     /// and can recover.
     ///
@@ -221,9 +222,9 @@ where
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
     ///   of the immediate and intermediate observations, then applies the ack rate modifier.
-    /// - **Every edge but the last**: leads into a relay, which is starved when neither loopbacks nor traffic over the
-    ///   edge show it to be working, see `min_loopback_rate`. The last edge leads to the destination, and a direct
-    ///   route has no relay.
+    /// - **Every edge but the last**: leads into a relay, which is starved when loopbacks or traffic over the edge show
+    ///   it dead and neither shows it working; no evidence leaves it alone, see `min_loopback_rate`. The last edge
+    ///   leads to the destination, and a direct route has no relay.
     /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
     ///   is applied when immediate QoS data is available.
@@ -400,7 +401,7 @@ where
     /// measured-dead floor. It is separate from `min_ack_rate`: a relay that rejects our packets still answers pings
     /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
     /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
-    /// only when one is below it and neither is above. Routers pass a tiny positive, so only a relay with nothing
+    /// only when one is below it and neither reads alive. Routers pass a tiny positive, so only a relay with nothing
     /// returning qualifies. Probe generation passes `0.0`, which never starves, so a starved relay keeps being probed
     /// and can recover.
     ///
@@ -411,8 +412,9 @@ where
     /// - **First edge**: same as [`EdgeValueFn::forward`].
     /// - **All other edges**: require a funding balance; the `penalty` penalizing multiplier is applied when probe
     ///   scores are absent.
-    /// - **Every edge but the last**: a relay none of whose loopbacks or traffic over the edge returned is starved, see
-    ///   `min_loopback_rate`. The last index is the edge the caller appends back to `me`.
+    /// - **Every edge but the last**: a relay that loopbacks or traffic over the edge show dead, with neither showing
+    ///   it working, is starved; no evidence leaves it alone, see `min_loopback_rate`. The last index is the edge the
+    ///   caller appends back to `me`.
     ///
     /// `length` counts edges in the **finished** path, including any the caller appends after
     /// traversal — `h + 1` for a loopback of `h` hops. Needed to size each edge's ticket.
@@ -1587,6 +1589,62 @@ mod tests {
             routed_value(Direction::Forward, hops + 1, hops, &looping(0.0))?,
             unrouted_value(Direction::Forward, hops + 1, hops, &looping(0.0))?,
             "{hops} hop(s): the last edge is not a relay"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::nan_probes_alone(Some(f64::NAN), None, false)]
+    #[case::nan_traffic_alone(None, Some(f64::NAN), false)]
+    #[case::both_nan(Some(f64::NAN), Some(f64::NAN), false)]
+    #[case::nan_probes_dead_traffic(Some(f64::NAN), Some(0.0), true)]
+    #[case::dead_probes_nan_traffic(Some(0.0), Some(f64::NAN), true)]
+    #[case::nan_probes_alive_traffic(Some(f64::NAN), Some(1.0), false)]
+    fn a_nan_rate_should_count_as_no_evidence(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[case] probes: Option<f64>,
+        #[case] traffic: Option<f64>,
+        #[case] starved: bool,
+    ) -> anyhow::Result<()> {
+        // `scale_by_health` treats NaN as unjudged, and so does the gate: a NaN is neither dead nor alive.
+        let mut observed = healthy();
+        if let Some(rate) = probes {
+            observed = observed.with_loopback_rate(rate);
+        }
+        if let Some(rate) = traffic {
+            observed = observed.with_traffic_rate(rate);
+        }
+
+        let routed = routed_value(direction, 2, 0, &observed)?;
+        let unrouted = unrouted_value(direction, 2, 0, &observed)?;
+        if starved {
+            assert!(
+                routed > 0.0 && routed / unrouted < 1e-8,
+                "probes {probes:?}, traffic {traffic:?}: must be starved"
+            );
+        } else {
+            assert_eq!(
+                routed, unrouted,
+                "probes {probes:?}, traffic {traffic:?}: must be left alone"
+            );
+        }
+        Ok(())
+    }
+
+    #[rstest]
+    fn a_return_path_of_starved_edges_should_stay_a_positive_candidate(
+        #[values(2, 3, 4)] length: usize,
+    ) -> anyhow::Result<()> {
+        // Longest path the planner builds is 3 relays, so 4 edges. Every edge before the last is
+        // starved, and the fold must stay positive or the path is pruned instead of kept.
+        let value_fn =
+            routed_value_fn(Direction::Returning, length, TEST_MIN_ACK_RATE, TEST_MIN_LOOPBACK_RATE)?.into_value_fn();
+        let observed = looping(0.0);
+        let folded = (0..length).fold(1.0, |cost, index| value_fn(cost, &observed, index));
+
+        assert!(
+            folded > 0.0,
+            "length {length}: a path of starved edges must stay a candidate, got {folded}"
         );
         Ok(())
     }

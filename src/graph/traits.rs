@@ -98,8 +98,9 @@ pub trait EdgeProtocolObservable {
     /// [`loopback_rate`](Self::loopback_rate) because they fail differently. Probes are sparse and
     /// fail on any hop of their loop; traffic is dense and comes back within seconds, but a quiet
     /// counterparty makes it fail too. `Some(0.0)` means traffic that had been coming back stopped,
-    /// anything above zero means some came back, and `None` means no evidence, such as an edge no
-    /// traffic ever returned over. Implementors that do not track traffic keep this default.
+    /// anything above zero means some came back, and `None` means no evidence: no traffic that had
+    /// ever come back crossed the edge, so there is no baseline to have collapsed from. Implementors
+    /// that do not track traffic keep this default.
     fn traffic_rate(&self) -> Option<f64> {
         None
     }
