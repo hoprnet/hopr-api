@@ -64,6 +64,19 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
     }
 }
 
+/// Rejects a positive value when loopbacks through the first relay mostly fail to return.
+///
+/// A relay that rejects our packets still answers pings and signs an ack for every packet, so only
+/// the loopbacks show that it delivers nothing. No loopback evidence leaves the value unchanged. A
+/// zero `min_rate` never rejects, which is how probe generation keeps the edge probe-able. An
+/// already rejected value is passed through: negating it would accept it.
+fn apply_loopback_rate(value: f64, loopback_rate: Option<f64>, min_rate: f64) -> f64 {
+    match loopback_rate {
+        Some(rate) if value > 0.0 && rate < min_rate => -value,
+        _ => value,
+    }
+}
+
 /// Whether a channel's balance can fund the ticket an edge at this position must issue.
 ///
 /// A relayer with `remaining_hops` hops after it issues a ticket worth that many times the face
@@ -182,7 +195,9 @@ where
     /// threshold are rejected.
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
-    ///   of the immediate and intermediate observations, then applies the ack rate modifier.
+    ///   of the immediate and intermediate observations, then applies the ack rate modifier. A relay whose loopbacks
+    ///   mostly fail to return (intermediate delivery rate below `min_ack_rate`) is rejected: its pings and acks
+    ///   read healthy even when it rejects our packets. Not applied to a direct route, which has no relay.
     /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
     ///   is applied when immediate QoS data is available.
@@ -244,7 +259,8 @@ where
                     && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                 {
                     let base = score_or_penalize(cost, observation.score(), penalty);
-                    return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                    let value = apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                    return apply_loopback_rate(value, intermediate.average_probe_rate(), min_ack_rate);
                 }
                 -cost
             }
@@ -370,7 +386,8 @@ where
                     && balance_suffices(intermediate.balance(), length - 1, ticket_face_value)
                 {
                     let base = score_or_penalize(cost, observation.score(), penalty);
-                    return apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                    let value = apply_ack_rate(immediate.ack_rate(), base, min_ack_rate, penalty);
+                    return apply_loopback_rate(value, intermediate.average_probe_rate(), min_ack_rate);
                 }
                 -cost
             }
@@ -413,6 +430,8 @@ mod tests {
     const TEST_MIN_ACK_RATE: f64 = 0.1;
     /// Probe score well clear of every threshold under test.
     const GOOD_SCORE: f64 = 0.95;
+    /// Poor delivery that still clears [`TEST_MIN_ACK_RATE`], so the edge is down-weighted, not rejected.
+    const DEGRADED_SCORE: f64 = 0.2;
     /// Ack rate comfortably above [`TEST_MIN_ACK_RATE`].
     const GOOD_ACK: f64 = 0.9;
     /// Balance that funds any path length used here.
@@ -1124,10 +1143,13 @@ mod tests {
 
     #[test]
     fn forward_first_edge_should_score_the_aggregate_rather_than_the_better_stream() -> anyhow::Result<()> {
-        // Taking the better of the two streams would hide a dead intermediate entirely, which is
+        // Taking the better of the two streams would hide a failing intermediate entirely, which is
         // the defect the presence rules exist to close. RFC-0014 §4.2 averages when both are
-        // present. Acks are fully accounted for here so the assertion isolates the aggregate.
-        let masking = dead_intermediate().with_immediate(Some(GOOD_SCORE), Some(1.0));
+        // present. Acks are fully accounted for here so the assertion isolates the aggregate. The
+        // intermediate is poor but above the loopback gate: a dead one is rejected outright.
+        let masking = healthy()
+            .with_intermediate(Some(FUNDED), Some(DEGRADED_SCORE))
+            .with_immediate(Some(GOOD_SCORE), Some(1.0));
         let sound = healthy().with_immediate(Some(GOOD_SCORE), Some(1.0));
 
         let masked = edge_value(Direction::Forward, 3, 0, &masking)?;
@@ -1138,7 +1160,7 @@ mod tests {
             "a dead intermediate must cost the edge, not be hidden by a healthy immediate: {masked} vs {intact}"
         );
         assert!(
-            (masked - (GOOD_SCORE + 0.0) / 2.0).abs() < 1e-9,
+            (masked - (GOOD_SCORE + DEGRADED_SCORE) / 2.0).abs() < 1e-9,
             "expected the documented average, got {masked}"
         );
         Ok(())
