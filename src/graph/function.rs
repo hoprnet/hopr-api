@@ -495,8 +495,9 @@ mod tests {
             unreachable!("not used in value function tests")
         }
 
+        /// The stub carries one figure, so the delivery rate and the score coincide.
         fn average_probe_rate(&self) -> Option<f64> {
-            unreachable!("not used in value function tests")
+            self.score
         }
 
         fn has_observations(&self) -> bool {
@@ -1238,6 +1239,85 @@ mod tests {
             share < 1e-8,
             "a measured-dead edge must draw a negligible share of the sampling weight, got {share}"
         );
+        Ok(())
+    }
+
+    // ── Loopback evidence on the first relay ────────────────────────────
+
+    // A relay that rejects our packets still answers pings and signs an ack for every packet, so its
+    // ping score and ack rate read healthy. Only the loopbacks routed through it show that nothing
+    // gets delivered, which is what `dead_intermediate` models.
+
+    #[rstest]
+    fn first_relay_whose_loopbacks_never_return_should_be_rejected_for_routing(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(1, 2, 3)] hops: usize,
+    ) -> anyhow::Result<()> {
+        let value = edge_value(direction, hops + 1, 0, &dead_intermediate())?;
+        assert!(
+            value < 0.0,
+            "{direction:?}, {hops} hop(s): a relay none of whose loopbacks return must not be a first hop, got {value}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    fn first_relay_whose_loopbacks_never_return_should_stay_probe_able_at_a_zero_threshold(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(1, 2, 3)] hops: usize,
+    ) -> anyhow::Result<()> {
+        // Probe generation passes a zero threshold. A rejected edge is never probed, so it can never
+        // show it recovered (RFC-0010 §4.2.3).
+        let length = std::num::NonZeroUsize::new(hops + 1).context("path length must be non-zero")?;
+        let value_fn = match direction {
+            Direction::Forward => EdgeValueFn::<f64, Observations>::forward(length, TEST_PENALTY, 0.0, None),
+            _ => EdgeValueFn::<f64, Observations>::forward_without_self_loopback(length, TEST_PENALTY, 0.0, None),
+        }
+        .into_value_fn();
+
+        let value = value_fn(1.0, &dead_intermediate(), 0);
+        assert!(
+            value > 0.0,
+            "{direction:?}, {hops} hop(s): a zero threshold must keep the edge probe-able, got {value}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    fn first_relay_with_returning_loopbacks_should_be_accepted(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(1, 2, 3)] hops: usize,
+    ) -> anyhow::Result<()> {
+        let value = edge_value(direction, hops + 1, 0, &healthy())?;
+        assert!(
+            value > 0.0,
+            "{direction:?}, {hops} hop(s): an honest relay must stay a first hop, got {value}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn direct_route_should_not_be_judged_by_loopbacks() -> anyhow::Result<()> {
+        // Zero hops: the single edge is the destination, which relays nothing for us. Loopbacks that
+        // fail elsewhere on their loop say nothing about it.
+        let value = edge_value(Direction::Forward, 1, 0, &dead_intermediate())?;
+        assert!(
+            value > 0.0,
+            "a direct peer must not be rejected on loopback evidence, got {value}"
+        );
+        Ok(())
+    }
+
+    #[rstest]
+    fn only_the_first_relay_should_be_judged_by_loopbacks(#[values(2, 3)] hops: usize) -> anyhow::Result<()> {
+        // Which relay on a loop dropped it is unknowable, so later hops are not rejected for it.
+        for index in 1..hops {
+            let value = edge_value(Direction::Forward, hops + 1, index, &dead_intermediate())?;
+            assert!(
+                value > 0.0,
+                "{hops} hop(s), edge {index}: only the first hop is gated, got {value}"
+            );
+        }
         Ok(())
     }
 
