@@ -64,15 +64,17 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
     }
 }
 
-/// Rejects a positive value when loopbacks through the first relay mostly fail to return.
+/// Starves a positive value when loopbacks through the first relay mostly fail to return.
 ///
 /// A relay that rejects our packets still answers pings and signs an ack for every packet, so only
-/// the loopbacks show that it delivers nothing. No loopback evidence leaves the value unchanged. A
-/// zero `min_rate` never rejects, which is how probe generation keeps the edge probe-able. An
-/// already rejected value is passed through: negating it would accept it.
+/// the loopbacks show that it delivers nothing. The value drops to [`MEASURED_DEAD_FLOOR`] times
+/// itself: negligible against an honest relay, yet positive, so the edge stays a candidate (RFC-0010
+/// §4.2.3). No loopback evidence leaves the value unchanged. A zero `min_rate` never starves, which
+/// is how probe generation keeps the edge probed at full weight so it can recover. A value already
+/// rejected is passed through.
 fn apply_loopback_rate(value: f64, loopback_rate: Option<f64>, min_rate: f64) -> f64 {
     match loopback_rate {
-        Some(rate) if value > 0.0 && rate < min_rate => -value,
+        Some(rate) if value > 0.0 && rate < min_rate => value * MEASURED_DEAD_FLOOR,
         _ => value,
     }
 }
@@ -196,8 +198,9 @@ where
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
     ///   of the immediate and intermediate observations, then applies the ack rate modifier. A relay whose loopbacks
-    ///   mostly fail to return (intermediate delivery rate below `min_ack_rate`) is rejected: its pings and acks
-    ///   read healthy even when it rejects our packets. Not applied to a direct route, which has no relay.
+    ///   mostly fail to return (intermediate delivery rate below `min_ack_rate`) is starved to the measured-dead
+    ///   floor: its pings and acks read healthy even when it rejects our packets. Not applied to a direct route,
+    ///   which has no relay.
     /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
     ///   is applied when immediate QoS data is available.
@@ -1271,14 +1274,23 @@ mod tests {
     // gets delivered, which is what `dead_intermediate` models.
 
     #[rstest]
-    fn first_relay_whose_loopbacks_never_return_should_be_rejected_for_routing(
+    fn first_relay_whose_loopbacks_never_return_should_be_starved_for_routing(
         #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
         #[values(1, 2, 3)] hops: usize,
     ) -> anyhow::Result<()> {
-        let value = edge_value(direction, hops + 1, 0, &dead_intermediate())?;
+        // Starved, not pruned (RFC-0010 §4.2.3): positive so the edge stays a candidate, negligible
+        // against an honest relay so weighted sampling all but never picks it.
+        let starved = edge_value(direction, hops + 1, 0, &dead_intermediate())?;
+        let honest = edge_value(direction, hops + 1, 0, &healthy())?;
+
         assert!(
-            value < 0.0,
-            "{direction:?}, {hops} hop(s): a relay none of whose loopbacks return must not be a first hop, got {value}"
+            starved > 0.0,
+            "{direction:?}, {hops} hop(s): a starved edge must stay a candidate, got {starved}"
+        );
+        let share = starved / (starved + honest);
+        assert!(
+            share < 1e-8,
+            "{direction:?}, {hops} hop(s): a relay none of whose loopbacks return must draw a negligible share, got {share}"
         );
         Ok(())
     }
