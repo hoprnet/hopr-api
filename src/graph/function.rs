@@ -64,19 +64,33 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
     }
 }
 
-/// Starves a positive value when no loopback over the edge returned.
+/// Starves a positive value when the evidence says the edge is dead and none says it is alive.
 ///
 /// A relay that rejects our packets still answers pings and signs an ack for every packet, so only
-/// the loopbacks show that it delivers nothing. The rate is the share of recent loopbacks over the
-/// edge that returned, so anything above zero is a relay that carries traffic. Below `min_rate` the
-/// value drops to [`MEASURED_DEAD_FLOOR`] times itself: negligible against an honest relay, yet
-/// positive, so the edge stays a candidate (RFC-0010 §4.2.3). No loopback evidence leaves the value
-/// unchanged, and a zero `min_rate` never starves, which is how probe generation keeps probing a
-/// starved relay so it can recover. A value already rejected is passed through.
+/// what travels over the edge shows it. There are two witnesses and either is enough to keep it:
+/// the loopbacks sent over it, and the real traffic that crossed it. They fail differently, so
+/// neither overrules the other. Probes are sparse and fail on any hop of their loop, so a failed
+/// probe does not outweigh traffic that came back. Traffic fails when the counterparty goes quiet,
+/// so a collapse does not outweigh probes that came back.
+///
+/// Dead is a rate below `min_rate` and alive is a rate at or above it, so anything above zero is a
+/// relay that carries traffic. Below it the value drops to [`MEASURED_DEAD_FLOOR`] times itself:
+/// negligible against an honest relay, yet positive, so the edge stays a candidate (RFC-0010
+/// §4.2.3). No evidence leaves the value unchanged, and a zero `min_rate` never starves, which is
+/// how probe generation keeps probing a starved relay so it can recover. A value already rejected
+/// is passed through.
 fn apply_loopback_rate<W: EdgeObservableRead>(value: f64, observation: &W, min_rate: f64) -> f64 {
-    match observation.intermediate_qos().and_then(|q| q.loopback_rate()) {
-        Some(rate) if value > 0.0 && rate < min_rate => value * MEASURED_DEAD_FLOOR,
-        _ => value,
+    let Some(intermediate) = observation.intermediate_qos() else {
+        return value;
+    };
+    let rates = [intermediate.loopback_rate(), intermediate.traffic_rate()];
+    let dead = rates.iter().any(|rate| rate.is_some_and(|rate| rate < min_rate));
+    let alive = rates.iter().any(|rate| rate.is_some_and(|rate| rate >= min_rate));
+
+    if value > 0.0 && dead && !alive {
+        value * MEASURED_DEAD_FLOOR
+    } else {
+        value
     }
 }
 
@@ -193,11 +207,13 @@ where
     /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
     /// to edges lacking probe-based quality observations.
     ///
-    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the share of recent loopbacks over the edge below
-    /// which the first relay is starved to the measured-dead floor. It is separate from `min_ack_rate`: a relay that
-    /// rejects our packets still answers pings and acks, so only loopbacks show it. Routers pass a tiny positive, so
-    /// only a relay none of whose loopbacks returned qualifies. Probe generation passes `0.0`, which never starves,
-    /// so a starved relay keeps being probed and can recover.
+    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the rate below which the first relay is starved to the
+    /// measured-dead floor. It is separate from `min_ack_rate`: a relay that rejects our packets still answers pings
+    /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
+    /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
+    /// only when one is below it and neither is above. Routers pass a tiny positive, so only a relay with nothing
+    /// returning qualifies. Probe generation passes `0.0`, which never starves, so a starved relay keeps being probed
+    /// and can recover.
     ///
     /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
     /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
@@ -205,7 +221,7 @@ where
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
     ///   of the immediate and intermediate observations, then applies the ack rate modifier. A relay
-    ///   none of whose recent loopbacks returned is starved, see `min_loopback_rate`. Not applied to a direct route,
+    ///   that neither loopbacks nor traffic show to be working is starved, see `min_loopback_rate`. Not applied to a direct route,
     ///   which has no relay.
     /// - **Last edge**: accepts an intermediate balance or immediate connectivity; penalizes when neither is available
     ///   (last hop is not monetized). When `length == 1` the single edge is both first and last; the ack rate modifier
@@ -379,11 +395,13 @@ where
     /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
     /// to edges lacking probe-based quality observations.
     ///
-    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the share of recent loopbacks over the edge below
-    /// which the first relay is starved to the measured-dead floor. It is separate from `min_ack_rate`: a relay that
-    /// rejects our packets still answers pings and acks, so only loopbacks show it. Routers pass a tiny positive, so
-    /// only a relay none of whose loopbacks returned qualifies. Probe generation passes `0.0`, which never starves,
-    /// so a starved relay keeps being probed and can recover.
+    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — the rate below which the first relay is starved to the
+    /// measured-dead floor. It is separate from `min_ack_rate`: a relay that rejects our packets still answers pings
+    /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
+    /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
+    /// only when one is below it and neither is above. Routers pass a tiny positive, so only a relay with nothing
+    /// returning qualifies. Probe generation passes `0.0`, which never starves, so a starved relay keeps being probed
+    /// and can recover.
     ///
     /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
     /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
@@ -538,6 +556,9 @@ mod tests {
         /// Share of loopbacks over the edge that returned, apart from the score.
         #[serde(skip)]
         loopback: Option<f64>,
+        /// How well real traffic over the edge came back, apart from the score.
+        #[serde(skip)]
+        traffic: Option<f64>,
     }
 
     impl EdgeProtocolObservable for StubIntermediate {
@@ -547,6 +568,10 @@ mod tests {
 
         fn loopback_rate(&self) -> Option<f64> {
             self.loopback
+        }
+
+        fn traffic_rate(&self) -> Option<f64> {
+            self.traffic
         }
     }
 
@@ -628,7 +653,16 @@ mod tests {
                 balance: balance.map(Balance::from),
                 score,
                 loopback: None,
+                traffic: None,
             });
+            self
+        }
+
+        /// Sets how well real traffic over this edge came back, on its intermediate stream.
+        fn with_traffic_rate(mut self, rate: f64) -> Self {
+            if let Some(intermediate) = self.intermediate.as_mut() {
+                intermediate.traffic = Some(rate);
+            }
             self
         }
 
@@ -1394,6 +1428,49 @@ mod tests {
             share < 1e-8,
             "{direction:?}, {hops} hop(s): a relay none of whose loopbacks return must draw a negligible share, got {share}"
         );
+        Ok(())
+    }
+
+    /// Probes and traffic are two witnesses that the path works, and either is enough: a relay is
+    /// starved only when one says it is dead and neither says it is alive.
+    #[rstest]
+    #[case::probes_dead_no_traffic(Some(0.0), None, true)]
+    #[case::probes_dead_traffic_returning(Some(0.0), Some(1.0), false)]
+    #[case::probes_dead_traffic_also_dead(Some(0.0), Some(0.0), true)]
+    #[case::no_probes_traffic_collapsed(None, Some(0.0), true)]
+    #[case::probes_returning_traffic_collapsed(Some(0.5), Some(0.0), false)]
+    #[case::both_returning(Some(1.0), Some(1.0), false)]
+    #[case::probes_only_returning(Some(0.5), None, false)]
+    #[case::traffic_only_returning(None, Some(0.5), false)]
+    #[case::no_evidence(None, None, false)]
+    fn probes_and_traffic_should_each_be_enough_to_keep_a_relay(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(1, 2, 3)] hops: usize,
+        #[case] probes: Option<f64>,
+        #[case] traffic: Option<f64>,
+        #[case] starved: bool,
+    ) -> anyhow::Result<()> {
+        let mut observed = healthy();
+        if let Some(rate) = probes {
+            observed = observed.with_loopback_rate(rate);
+        }
+        if let Some(rate) = traffic {
+            observed = observed.with_traffic_rate(rate);
+        }
+
+        let routed = routed_value(direction, hops + 1, 0, &observed)?;
+        let unrouted = unrouted_value(direction, hops + 1, 0, &observed)?;
+        if starved {
+            assert!(
+                routed > 0.0 && routed / unrouted < 1e-8,
+                "{direction:?}, {hops} hop(s), probes {probes:?}, traffic {traffic:?}: must be starved, got {routed} against {unrouted}"
+            );
+        } else {
+            assert_eq!(
+                routed, unrouted,
+                "{direction:?}, {hops} hop(s), probes {probes:?}, traffic {traffic:?}: must be left alone"
+            );
+        }
         Ok(())
     }
 

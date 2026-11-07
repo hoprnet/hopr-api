@@ -91,6 +91,18 @@ pub trait EdgeProtocolObservable {
     fn loopback_rate(&self) -> Option<f64> {
         None
     }
+
+    /// How well real traffic that crossed this edge came back, relative to the edge's own best.
+    ///
+    /// The other half of the evidence on whether the edge works, kept apart from
+    /// [`loopback_rate`](Self::loopback_rate) because they fail differently. Probes are sparse and
+    /// fail on any hop of their loop; traffic is dense and comes back within seconds, but a quiet
+    /// counterparty makes it fail too. `Some(0.0)` means traffic that had been coming back stopped,
+    /// anything above zero means some came back, and `None` means no evidence, such as an edge no
+    /// traffic ever returned over. Implementors that do not track traffic keep this default.
+    fn traffic_rate(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// Trait for reading immediate hop protocol conformance metrics.
