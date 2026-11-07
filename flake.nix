@@ -173,7 +173,8 @@
               gh
               pkgs-unstable.cargo-audit
               cargo-machete
-              cargo-release
+              # From unstable: cargo-release 1.1.7 needs rustc 1.97, release-26.05 ships 1.95.
+              pkgs-unstable.cargo-release
               cargo-shear
               cargo-insta
             ];
@@ -203,7 +204,7 @@
             extraPackages = with pkgs; [
               pkgs-unstable.cargo-audit
               cargo-machete
-              cargo-release
+              pkgs-unstable.cargo-release
               cargo-shear
               zizmor
             ];
