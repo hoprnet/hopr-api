@@ -162,6 +162,10 @@ fn require_funding<W: EdgeObservableRead>(
 /// - [`EdgeValueFn::forward`] — full graph traversal in the forward direction
 /// - [`EdgeValueFn::returning`] — full graph traversal in the return direction
 /// - [`EdgeValueFn::forward_without_self_loopback`] — simple forward paths without final loopback
+///
+/// Each has a `_gated` variant that also takes a `min_loopback_rate` and starves a relay that loopbacks
+/// or traffic show to be dead. The variants without it judge no relay on that evidence, which is what
+/// probe generation needs.
 pub struct EdgeValueFn<C, W> {
     initial: C,
     min: Option<C>,
@@ -213,8 +217,8 @@ where
     /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
     /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
     /// only when one is below it and neither reads alive. Routers pass a tiny positive, so only a relay with nothing
-    /// returning qualifies. Probe generation passes `0.0`, which never starves, so a starved relay keeps being probed
-    /// and can recover.
+    /// returning qualifies. `0.0` never starves, and the constructors without this argument behave as if it were `0.0`,
+    /// so probe generation keeps probing a starved relay and it can recover.
     ///
     /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
     /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
@@ -232,7 +236,7 @@ where
     /// - **All edges but the last**: additionally scaled by the relayer's health (see [`EdgeObservableRead::health`]);
     ///   an unusable relayer rejects the edge. The last edge leads to the destination, which is not avoided for how it
     ///   fares as a relayer.
-    pub fn forward(
+    pub fn forward_gated(
         length: std::num::NonZeroUsize,
         penalty: f64,
         min_ack_rate: f64,
@@ -324,8 +328,8 @@ where
     /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
     /// to edges lacking probe-based quality observations.
     ///
-    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — as for [`EdgeValueFn::forward`], but applied to every edge
-    /// before the one into `me` that lies on a loopback cycle, each by the loops over it.
+    /// `min_loopback_rate` is clamped to `[0.0, 1.0]` — as for [`EdgeValueFn::forward_gated`], but applied to every
+    /// edge before the one into `me` that lies on a loopback cycle, each by the loops over it.
     ///
     /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
     /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
@@ -340,7 +344,7 @@ where
     ///   scores are absent.
     /// - **All edges but the last**: additionally scaled by the relayer's health (see [`EdgeObservableRead::health`]);
     ///   an unusable relayer rejects the edge.
-    pub fn returning(
+    pub fn returning_gated(
         length: std::num::NonZeroUsize,
         penalty: f64,
         min_ack_rate: f64,
@@ -402,14 +406,14 @@ where
     /// and acks, so only what travels over its edge shows it. Two witnesses are read, the loopbacks over the edge
     /// and the real traffic that crossed it, and either one at or above the threshold keeps the relay: it is starved
     /// only when one is below it and neither reads alive. Routers pass a tiny positive, so only a relay with nothing
-    /// returning qualifies. Probe generation passes `0.0`, which never starves, so a starved relay keeps being probed
-    /// and can recover.
+    /// returning qualifies. `0.0` never starves, and the constructors without this argument behave as if it were `0.0`,
+    /// so probe generation keeps probing a starved relay and it can recover.
     ///
     /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
     /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
     /// threshold are rejected.
     ///
-    /// - **First edge**: same as [`EdgeValueFn::forward`].
+    /// - **First edge**: same as [`EdgeValueFn::forward_gated`].
     /// - **All other edges**: require a funding balance; the `penalty` penalizing multiplier is applied when probe
     ///   scores are absent.
     /// - **Every edge but the last**: a relay that loopbacks or traffic over the edge show dead, with neither showing
@@ -422,7 +426,7 @@ where
     /// Every edge of such a path leads into a relayer (the destination is appended afterwards), so all
     /// are scaled by relayer health. Probes walking it skip an unusable relayer until its owner lifts
     /// the verdict.
-    pub fn forward_without_self_loopback(
+    pub fn forward_without_self_loopback_gated(
         length: std::num::NonZeroUsize,
         penalty: f64,
         min_ack_rate: f64,
@@ -468,6 +472,47 @@ where
                 }
             }),
         }
+    }
+
+    /// Build a forward HOPR value function for full graph traversals, without judging relays on
+    /// delivery evidence.
+    ///
+    /// As [`EdgeValueFn::forward_gated`] with a loopback threshold of `0.0`, which never starves a
+    /// relay. This is what probe generation uses, so a starved relay keeps being probed and can
+    /// recover.
+    pub fn forward(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+    ) -> Self {
+        Self::forward_gated(length, penalty, min_ack_rate, 0.0, ticket_face_value)
+    }
+
+    /// Build a HOPR value function for full graph traversals in the return direction, without
+    /// judging relays on delivery evidence.
+    ///
+    /// As [`EdgeValueFn::returning_gated`] with a loopback threshold of `0.0`.
+    pub fn returning(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+    ) -> Self {
+        Self::returning_gated(length, penalty, min_ack_rate, 0.0, ticket_face_value)
+    }
+
+    /// Build a value function for simple forward paths without the final loopback, without judging
+    /// relays on delivery evidence.
+    ///
+    /// As [`EdgeValueFn::forward_without_self_loopback_gated`] with a loopback threshold of `0.0`.
+    pub fn forward_without_self_loopback(
+        length: std::num::NonZeroUsize,
+        penalty: f64,
+        min_ack_rate: f64,
+        ticket_face_value: Option<Balance>,
+    ) -> Self {
+        Self::forward_without_self_loopback_gated(length, penalty, min_ack_rate, 0.0, ticket_face_value)
     }
 }
 
@@ -774,15 +819,12 @@ mod tests {
         ) -> anyhow::Result<EdgeValueFn<f64, Observations>> {
             let length = std::num::NonZeroUsize::new(length).context("path length must be non-zero")?;
             Ok(match self {
-                Self::Forward => EdgeValueFn::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE, 0.0, ticket_face_value),
-                Self::Returning => {
-                    EdgeValueFn::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE, 0.0, ticket_face_value)
-                }
+                Self::Forward => EdgeValueFn::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE, ticket_face_value),
+                Self::Returning => EdgeValueFn::returning(length, TEST_PENALTY, TEST_MIN_ACK_RATE, ticket_face_value),
                 Self::ForwardWithoutSelfLoopback => EdgeValueFn::forward_without_self_loopback(
                     length,
                     TEST_PENALTY,
                     TEST_MIN_ACK_RATE,
-                    0.0,
                     ticket_face_value,
                 ),
             })
@@ -1378,11 +1420,19 @@ mod tests {
     ) -> anyhow::Result<EdgeValueFn<f64, Observations>> {
         let length = std::num::NonZeroUsize::new(length).context("path length must be non-zero")?;
         Ok(match direction {
-            Direction::Forward => EdgeValueFn::forward(length, TEST_PENALTY, min_ack_rate, min_loopback_rate, None),
-            Direction::Returning => EdgeValueFn::returning(length, TEST_PENALTY, min_ack_rate, min_loopback_rate, None),
-            Direction::ForwardWithoutSelfLoopback => {
-                EdgeValueFn::forward_without_self_loopback(length, TEST_PENALTY, min_ack_rate, min_loopback_rate, None)
+            Direction::Forward => {
+                EdgeValueFn::forward_gated(length, TEST_PENALTY, min_ack_rate, min_loopback_rate, None)
             }
+            Direction::Returning => {
+                EdgeValueFn::returning_gated(length, TEST_PENALTY, min_ack_rate, min_loopback_rate, None)
+            }
+            Direction::ForwardWithoutSelfLoopback => EdgeValueFn::forward_without_self_loopback_gated(
+                length,
+                TEST_PENALTY,
+                min_ack_rate,
+                min_loopback_rate,
+                None,
+            ),
         })
     }
 
@@ -1488,7 +1538,7 @@ mod tests {
         #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
         #[values(1, 2, 3)] hops: usize,
     ) -> anyhow::Result<()> {
-        // Probe generation passes a zero threshold. Starving there would stop loops going through
+        // Probe generation builds the value function without a threshold. Starving there would stop loops going through
         // the relay, freezing its rate at zero.
         let probing = unrouted_value(direction, hops + 1, 0, &looping(0.0))?;
         let honest = unrouted_value(direction, hops + 1, 0, &looping(1.0))?;
@@ -1496,6 +1546,23 @@ mod tests {
             probing, honest,
             "{direction:?}, {hops} hop(s): a zero threshold must leave the edge at full weight"
         );
+        Ok(())
+    }
+
+    #[rstest]
+    fn the_constructors_without_a_loopback_threshold_should_judge_no_relay_on_any_edge(
+        #[values(Direction::Forward, Direction::Returning, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(2, 3, 4)] length: usize,
+    ) -> anyhow::Result<()> {
+        // These are the 5.0.0 constructors and they must behave as they did: probe generation builds
+        // its value functions with them, and a starved relay it stopped probing could never recover.
+        for index in 0..length {
+            assert_eq!(
+                unrouted_value(direction, length, index, &looping(0.0))?,
+                unrouted_value(direction, length, index, &looping(1.0))?,
+                "{direction:?}, length {length}, edge {index}: loop evidence must not move the value"
+            );
+        }
         Ok(())
     }
 
@@ -1831,13 +1898,12 @@ mod tests {
         let observations = funded_with(1_000);
         let length = std::num::NonZeroUsize::new(3).context("path length must be non-zero")?;
 
-        let cheap = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE, 0.0, None)
+        let cheap = EdgeValueFn::<_, Observations>::forward(length, TEST_PENALTY, TEST_MIN_ACK_RATE, None)
             .into_value_fn()(1.0, &observations, 0);
         let expensive = EdgeValueFn::<_, Observations>::forward(
             length,
             TEST_PENALTY,
             TEST_MIN_ACK_RATE,
-            0.0,
             Some(Balance::from(10_000u64)),
         )
         .into_value_fn()(1.0, &observations, 0);
