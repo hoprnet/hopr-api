@@ -79,7 +79,19 @@ fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: 
 /// candidate (RFC-0010 §4.2.3). No evidence leaves the value unchanged, and a zero `min_rate` never starves, which is
 /// how probe generation keeps probing a starved relay so it can recover. A value already rejected
 /// is passed through.
-fn apply_loopback_rate<W: EdgeObservableRead>(value: f64, observation: &W, min_rate: f64) -> f64 {
+///
+/// A genuine-ack rate below `min_ack_rate` overrules both: it is per packet and blames this relay alone.
+fn apply_loopback_rate<W: EdgeObservableRead>(value: f64, observation: &W, min_rate: f64, min_ack_rate: f64) -> f64 {
+    let genuine_ack_rate = observation
+        .immediate_qos()
+        .and_then(|immediate| immediate.genuine_ack_rate())
+        .filter(|rate| !rate.is_nan());
+    let gate_enabled = min_rate > 0.0;
+    let rejects_relayed = genuine_ack_rate.is_some_and(|rate| rate < min_ack_rate);
+    if value > 0.0 && gate_enabled && rejects_relayed {
+        return value * MEASURED_DEAD_FLOOR;
+    }
+
     let Some(intermediate) = observation.intermediate_qos() else {
         return value;
     };
@@ -315,6 +327,7 @@ where
                         scale_by_health(value, observation.health()),
                         observation,
                         min_loopback_rate,
+                        min_ack_rate,
                     )
                 } else {
                     value
@@ -388,6 +401,7 @@ where
                         scale_by_health(value, observation.health()),
                         observation,
                         min_loopback_rate,
+                        min_ack_rate,
                     )
                 } else {
                     value
@@ -466,7 +480,7 @@ where
                 // `length` counts the finished path, so the last index is the edge the caller appends
                 // back to `me`, which is not a relay anyone chooses.
                 if path_index + 1 < length {
-                    apply_loopback_rate(value, observation, min_loopback_rate)
+                    apply_loopback_rate(value, observation, min_loopback_rate, min_ack_rate)
                 } else {
                     value
                 }
@@ -554,6 +568,8 @@ mod tests {
         /// `None` models a stream with no observations; `Some(0.0)` one measured and found dead.
         score: Option<f64>,
         ack_rate: Option<f64>,
+        #[serde(skip)]
+        genuine_ack_rate: Option<f64>,
     }
 
     impl EdgeNetworkObservableRead for StubImmediate {
@@ -565,6 +581,10 @@ mod tests {
     impl EdgeImmediateProtocolObservable for StubImmediate {
         fn ack_rate(&self) -> Option<f64> {
             self.ack_rate
+        }
+
+        fn genuine_ack_rate(&self) -> Option<f64> {
+            self.genuine_ack_rate
         }
     }
 
@@ -695,6 +715,7 @@ mod tests {
                 connected: Some(true),
                 score,
                 ack_rate,
+                genuine_ack_rate: None,
             });
             self
         }
@@ -714,6 +735,14 @@ mod tests {
         fn with_traffic_rate(mut self, rate: f64) -> Self {
             if let Some(intermediate) = self.intermediate.as_mut() {
                 intermediate.traffic = Some(rate);
+            }
+            self
+        }
+
+        /// Sets the share of relayed packets whose ack solved their challenge, on its immediate stream.
+        fn with_genuine_ack_rate(mut self, rate: f64) -> Self {
+            if let Some(immediate) = self.immediate.as_mut() {
+                immediate.genuine_ack_rate = Some(rate);
             }
             self
         }
@@ -786,6 +815,7 @@ mod tests {
             connected: None,
             score: None,
             ack_rate: None,
+            genuine_ack_rate: None,
         });
         obs
     }
@@ -1528,6 +1558,49 @@ mod tests {
             assert_eq!(
                 routed, unrouted,
                 "{direction:?}, {hops} hop(s), probes {probes:?}, traffic {traffic:?}: must be left alone"
+            );
+        }
+        Ok(())
+    }
+
+    // Probes and traffic both alive must not save a relay whose acks never solve our challenges.
+    #[rstest]
+    #[case::rejects_despite_returning_loops(Some(0.0), Some(1.0), Some(1.0), true)]
+    #[case::rejects_without_other_evidence(Some(0.0), None, None, true)]
+    #[case::below_min_ack_rate(Some(TEST_MIN_ACK_RATE / 2.0), Some(1.0), None, true)]
+    #[case::at_min_ack_rate(Some(TEST_MIN_ACK_RATE), Some(1.0), None, false)]
+    #[case::genuine_acks_but_dead_loops(Some(1.0), Some(0.0), None, true)]
+    #[case::no_relayed_packets(None, Some(1.0), None, false)]
+    fn genuine_acks_below_the_ack_threshold_should_starve_a_relay_whatever_loops_and_traffic_say(
+        #[values(Direction::Forward, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
+        #[values(1, 2, 3)] hops: usize,
+        #[case] genuine: Option<f64>,
+        #[case] probes: Option<f64>,
+        #[case] traffic: Option<f64>,
+        #[case] starved: bool,
+    ) -> anyhow::Result<()> {
+        let mut observed = healthy();
+        if let Some(rate) = genuine {
+            observed = observed.with_genuine_ack_rate(rate);
+        }
+        if let Some(rate) = probes {
+            observed = observed.with_loopback_rate(rate);
+        }
+        if let Some(rate) = traffic {
+            observed = observed.with_traffic_rate(rate);
+        }
+
+        let routed = routed_value(direction, hops + 1, 0, &observed)?;
+        let unrouted = unrouted_value(direction, hops + 1, 0, &observed)?;
+        if starved {
+            assert!(
+                routed > 0.0 && routed / unrouted < 1e-8,
+                "{direction:?}, {hops} hop(s), genuine {genuine:?}: must be starved, got {routed} against {unrouted}"
+            );
+        } else {
+            assert_eq!(
+                routed, unrouted,
+                "{direction:?}, {hops} hop(s), genuine {genuine:?}: must be left alone"
             );
         }
         Ok(())

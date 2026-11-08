@@ -35,6 +35,13 @@ pub enum EdgeWeightType {
         /// Total number of acknowledgments received from the immediate peer.
         num_acks: u64,
     },
+    /// Relayed packets sent to the immediate peer, and how many acks solved their challenge; a rejecting peer acks randomly.
+    RelayedProtocolConformance {
+        /// Packets sent to the immediate peer for it to relay.
+        num_relayed: u64,
+        /// How many of those were acknowledged with the solution to the packet's challenge.
+        num_genuine_acks: u64,
+    },
     /// SURB round-trips expected across this edge over a reporting interval, and how many of them
     /// were observed to complete.
     ///
@@ -118,6 +125,11 @@ pub trait EdgeImmediateProtocolObservable {
     /// a meaningful ratio. Returns `Some(rate)` in the range \[0.0, 1.0\]
     /// where 1.0 means all messages were acknowledged.
     fn ack_rate(&self) -> Option<f64>;
+
+    /// Share of recently relayed packets whose ack solved their challenge; `None` without relayed packets.
+    fn genuine_ack_rate(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// Trait for reading aggregated quality-of-service observations from a graph edge.
