@@ -82,3 +82,14 @@ nix fmt
 ## License
 
 [GPL-3.0-only](https://github.com/hoprnet/hopr-api/blob/main/LICENSE)
+
+## Component operational state
+
+Enable `component` (included in `full`) to use `ComponentState` and `AtomicComponentState`.
+`Running` means the component can perform all its current responsibilities; `Degraded` means it can perform some; `Failed` means it cannot perform any.
+States default to `Running` and are ordered by severity. Each implementation owns its transitions and recovery behavior.
+The `serde` feature enables serialization and deserialization. Enable both `component` and `serde` to use `StateDump`, the optional asynchronous diagnostic interface.
+Generic callers can collect an opaque owned Serde snapshot through `state_dump().await`; concrete snapshot models and collection logic remain inside each implementing crate.
+The interface delegates through references, `Box` and `Arc`. Each implementation defines its snapshot schema and documents whether reads consume observations.
+Components requiring caller-supplied context may return an opaque configured view implementing `StateDump`.
+Operational state and diagnostic collection errors remain separate; timers, logging and deadlines are not part of the shared interface.

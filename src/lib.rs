@@ -29,3 +29,11 @@ pub use hopr_types::{
     },
 };
 pub use libp2p_identity::PeerId;
+
+/// Shared operational state of independently running components.
+#[cfg(feature = "component")]
+pub mod component;
+#[cfg(all(feature = "component", feature = "serde"))]
+pub use component::StateDump;
+#[cfg(feature = "component")]
+pub use component::{AtomicComponentState, ComponentState};
