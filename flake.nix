@@ -4,27 +4,25 @@
   inputs = {
     flake-utils.url = "github:numtide/flake-utils";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    nixpkgs.url = "github:NixOS/nixpkgs/release-26.05";
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay/master";
-    crane.url = "github:ipetkov/crane/v0.24.0";
+    rust-overlay.follows = "nix-lib/rust-overlay";
+    crane.follows = "nix-lib/crane";
 
     # HOPR Nix Library (provides flake-utils and reusable build functions)
-    nix-lib.url = "github:hoprnet/nix-lib/v2.1.1";
+    nix-lib.url = "github:hoprnet/nix-lib/v2.1.7";
+    # nix-lib anchors the heavy pins (nixpkgs, nixpkgs-unstable, rust-overlay, crane) so every
+    # hoprnet flake on the same nix-lib release shares them. To bump them, point nix-lib.url at
+    # the new release tag, then run `nix flake update nix-lib`.
+    nixpkgs.follows = "nix-lib/nixpkgs";
+    nixpkgs-unstable.follows = "nix-lib/nixpkgs-unstable";
     pre-commit.url = "github:cachix/git-hooks.nix";
     treefmt-nix.url = "github:numtide/treefmt-nix";
     flake-root.url = "github:srid/flake-root";
 
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
-    nix-lib.inputs.nixpkgs.follows = "nixpkgs";
     nix-lib.inputs.flake-utils.follows = "flake-utils";
-    nix-lib.inputs.crane.follows = "crane";
     nix-lib.inputs.flake-parts.follows = "flake-parts";
-    nix-lib.inputs.rust-overlay.follows = "rust-overlay";
     nix-lib.inputs.treefmt-nix.follows = "treefmt-nix";
-    nix-lib.inputs.nixpkgs-unstable.follows = "nixpkgs-unstable";
     pre-commit.inputs.nixpkgs.follows = "nixpkgs";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -175,7 +173,8 @@
               gh
               pkgs-unstable.cargo-audit
               cargo-machete
-              cargo-release
+              # From unstable: cargo-release 1.1.7 needs rustc 1.97, release-26.05 ships 1.95.
+              pkgs-unstable.cargo-release
               cargo-shear
               cargo-insta
             ];
@@ -205,7 +204,7 @@
             extraPackages = with pkgs; [
               pkgs-unstable.cargo-audit
               cargo-machete
-              cargo-release
+              pkgs-unstable.cargo-release
               cargo-shear
               zizmor
             ];
