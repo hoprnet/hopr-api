@@ -5,6 +5,7 @@ ignore = [
   "RUSTSEC-2026-0173", # 'proc-macro-error2' via 'aquamarine' in 'hopr-types' [unmaintained], waiting on upstream update
   "RUSTSEC-2026-0249", # `smartstring` unmaintained, requires `opentelemetry-prometheus-text-exporter` > 0.3.0
   "RUSTSEC-2026-0387", # `crypto-bigint` 0.5.5 via `elliptic-curve` 0.13.8 in `k256` 0.13.4 (alloy); needs alloy to be updated
+  "RUSTSEC-2026-0441", # `pin-utils` unmaintained; wasmtimer 0.4.3 -> pin-utils 0.1.1. Remove when wasmtimer drops this dependency.
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "low"
