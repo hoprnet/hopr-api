@@ -90,7 +90,7 @@ Enable `component` (included in `full`) to use `ComponentState` and `AtomicCompo
 `Running` means the component can perform all its current responsibilities; `Degraded` means it can perform some; `Failed` means it cannot perform any.
 States default to `Running` and are ordered by severity. Each implementation owns its transitions and recovery behavior.
 The `serde` feature enables serialization and deserialization. Enable both `component` and `serde` to use `StateDump`, the optional asynchronous diagnostic interface.
-Generic callers can collect an opaque owned Serde snapshot through `state_dump().await`; concrete snapshot models and collection logic remain inside each implementing crate.
+Generic callers can collect an opaque owned Serde snapshot through `dump().await`; concrete snapshot models and collection logic remain inside each implementing crate.
 The interface delegates through references, `Box` and `Arc`. Each implementation defines its snapshot schema and documents whether reads consume observations.
-For components requiring caller-supplied context, the implementing crate can expose a separate constructor or method that accepts that context and returns a view implementing `StateDump`. Callers then invoke `state_dump()` on the view; `StateDump` itself does not construct or return views.
+For components requiring caller-supplied context, the implementing crate can expose a separate constructor or method that accepts that context and returns a view implementing `StateDump`. Callers then invoke `dump()` on the view; `StateDump` itself does not construct or return views.
 Operational state and diagnostic collection errors remain separate; timers, logging and deadlines are not part of the shared interface.

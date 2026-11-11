@@ -31,7 +31,7 @@ full = [
   "types-telemetry",
 ]
 chain = ["dep:auto_impl", "types-chain", "dep:auto_impl"]
-component = ["dep:atomic_enum", "dep:num_enum"]
+component = ["dep:atomic_enum", "dep:num_enum", "dep:auto_impl"]
 ct = []
 network = ["dep:auto_impl"]
 graph = ["dep:auto_impl"]

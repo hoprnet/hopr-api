@@ -1,5 +1,5 @@
 //! Pollable diagnostics with implementation-owned snapshot models.
-use std::{error::Error, future::Future, sync::Arc};
+use std::{error::Error, future::Future};
 
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -16,7 +16,7 @@ use serde::{Serialize, de::DeserializeOwned};
 /// deadlines and cancellation remain the responsibility of the implementation or its host.
 /// For components needing caller-supplied context, the implementing crate can expose a separate
 /// constructor or method that accepts that context and returns a view implementing this trait.
-/// Callers invoke `state_dump()` on that view; this trait does not construct or return views.
+/// Callers invoke `dump()` on that view; this trait does not construct or return views.
 ///
 /// The interface supports generic callers and delegates through references, `Box` and `Arc`.
 /// Collection is asynchronous so implementations can await access to component state (for example,
@@ -27,46 +27,19 @@ use serde::{Serialize, de::DeserializeOwned};
 /// use hopr_api::StateDump;
 ///
 /// async fn serialize_dump<T: StateDump>(source: &T) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-///     let snapshot = source.state_dump().await?;
+///     let snapshot = source.dump().await?;
 ///     Ok(serde_json::to_string(&snapshot)?)
 /// }
 /// ```
+#[auto_impl::auto_impl(&, Box, Arc)]
 pub trait StateDump: Send + Sync {
     /// Diagnostic collection error; this does not assign an operational failure state.
     type Error: Error + Send + Sync + 'static;
 
     /// Collect an owned snapshot without exposing its concrete type.
-    fn state_dump(
+    fn dump(
         &self,
     ) -> impl Future<Output = Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error>> + Send;
-}
-
-impl<T: StateDump + ?Sized> StateDump for &T {
-    type Error = T::Error;
-
-    fn state_dump(
-        &self,
-    ) -> impl Future<Output = Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error>> + Send {
-        (**self).state_dump()
-    }
-}
-impl<T: StateDump + ?Sized> StateDump for Box<T> {
-    type Error = T::Error;
-
-    fn state_dump(
-        &self,
-    ) -> impl Future<Output = Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error>> + Send {
-        (**self).state_dump()
-    }
-}
-impl<T: StateDump + ?Sized> StateDump for Arc<T> {
-    type Error = T::Error;
-
-    fn state_dump(
-        &self,
-    ) -> impl Future<Output = Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error>> + Send {
-        (**self).state_dump()
-    }
 }
 
 #[cfg(test)]
@@ -92,9 +65,7 @@ mod tests {
     impl StateDump for Queue {
         type Error = Infallible;
 
-        async fn state_dump(
-            &self,
-        ) -> Result<impl Serialize + serde::de::DeserializeOwned + Send + 'static, Self::Error> {
+        async fn dump(&self) -> Result<impl Serialize + serde::de::DeserializeOwned + Send + 'static, Self::Error> {
             Ok(PrivateSnapshot {
                 queue: self.0.load(Ordering::Relaxed),
             })
@@ -106,7 +77,7 @@ mod tests {
         fn send<T: Send>(value: T) -> T {
             value
         }
-        Ok(serde_json::to_value(send(source.state_dump()).await?)?)
+        Ok(serde_json::to_value(send(source.dump()).await?)?)
     }
 
     #[tokio::test]
@@ -121,7 +92,7 @@ mod tests {
         assert_eq!(read(&boxed).await?["queue"], 11);
         let snapshot = {
             let temporary = Queue(AtomicUsize::new(13));
-            temporary.state_dump().await?
+            temporary.dump().await?
         };
         let json = serde_json::to_string(&snapshot)?;
         assert_eq!(serde_json::from_str::<PrivateSnapshot>(&json)?.queue, 13);
@@ -132,9 +103,7 @@ mod tests {
     impl StateDump for Unavailable {
         type Error = std::io::Error;
 
-        async fn state_dump(
-            &self,
-        ) -> Result<impl Serialize + serde::de::DeserializeOwned + Send + 'static, Self::Error> {
+        async fn dump(&self) -> Result<impl Serialize + serde::de::DeserializeOwned + Send + 'static, Self::Error> {
             Err::<(), _>(std::io::Error::new(
                 std::io::ErrorKind::TimedOut,
                 "collection unavailable",
@@ -144,7 +113,7 @@ mod tests {
 
     #[tokio::test]
     async fn collection_errors_remain_distinct_from_operational_state() {
-        let result = Unavailable.state_dump().await;
+        let result = Unavailable.dump().await;
         let error = match result {
             Err(error) => error,
             Ok(_) => panic!("expected collection failure"),
