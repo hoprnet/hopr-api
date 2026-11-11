@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "6.0.1"
+version = "7.0.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -70,8 +70,7 @@ futures = { version = "0.3.34", default-features = false, features = [
   "async-await",
 ] }
 futures-concurrency = "7.7.1"
-# do not update libp2p-identity until new libp2p version
-libp2p-identity = { version = "0.2.14", features = [
+libp2p-identity = { version = "0.3.1", features = [
   "peerid",
   "ed25519",
   "rand",
@@ -85,7 +84,7 @@ tracing = { version = "0.1.44", default-features = false, features = [
   "release_max_level_debug",
 ] }
 
-hopr-types = { version = "6.0.0", features = [
+hopr-types = { git = "https://github.com/hoprnet/hopr-types", rev = "fe23edc552c7362c41a08af7fad63b683b8b5cb9", features = [
   "crypto",
   "internal",
   "primitive",
