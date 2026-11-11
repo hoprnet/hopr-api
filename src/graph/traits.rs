@@ -242,7 +242,7 @@ pub trait NetworkGraphView {
     /// Resolves a node to the slot it occupies in a [`PathId`], if the graph knows it.
     ///
     /// A [`PathId`] identifies a path by position rather than by key, so anything reporting a path
-    /// it did not obtain from [`simple_paths`](GraphPathSelection::simple_paths) -- notably SURB
+    /// it did not obtain from [`simple_paths`](NetworkGraphTraverse::simple_paths) -- notably SURB
     /// round-trips, which know their route as public keys -- needs this to speak the same language.
     ///
     /// The mapping is only valid for as long as the node stays in the graph; a caller that holds an

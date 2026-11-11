@@ -173,7 +173,7 @@ where
 
     /// Performs batch [full withdrawal](Self::withdraw_deposit) of multiple deposits into a single Ethereum address.
     ///
-    /// This default implementation simply concurrently calls [`self.withdraw_deposit`].
+    /// This default implementation simply concurrently calls [`Self::withdraw_deposit`].
     /// Implementors may choose a more efficient pool-native batching.
     async fn withdraw_multiple_deposits(
         &self,
@@ -208,7 +208,7 @@ where
 
     /// Performs batch [full transfer](Self::pool_transfer) of multiple deposits into a single deposit address.
     ///
-    /// This default implementation simply concurrently calls [`self.pool_transfer`].
+    /// This default implementation simply concurrently calls [`Self::pool_transfer`].
     /// Implementors may choose a more efficient pool-native batching.
     ///
     /// One result per key, identified by its *source* allocation.
