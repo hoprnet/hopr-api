@@ -5,6 +5,8 @@ use serde::{Serialize, de::DeserializeOwned};
 
 /// Optional diagnostic state collection shared by components and their callers.
 ///
+/// Available when both the `component` and `serde` features are enabled.
+///
 /// Implementations keep their concrete snapshot models private. Callers receive an owned,
 /// opaque Serde value whose schema is defined by the implementation and may change.
 /// Collection errors describe diagnostics availability, independently of [`super::ComponentState`].
@@ -12,10 +14,14 @@ use serde::{Serialize, de::DeserializeOwned};
 /// Collection must bound its work and avoid blocking the async executor. Implementations document
 /// whether polling resets interval counters or otherwise consumes observations. Timers, logging,
 /// deadlines and cancellation remain the responsibility of the implementation or its host.
-/// Components needing caller-supplied context can return a configured view implementing this trait.
+/// For components needing caller-supplied context, the implementing crate can expose a separate
+/// constructor or method that accepts that context and returns a view implementing this trait.
+/// Callers invoke `state_dump()` on that view; this trait does not construct or return views.
 ///
 /// The interface supports generic callers and delegates through references, `Box` and `Arc`.
-/// Both the collection future and its owned result can be sent between tasks.
+/// Collection is asynchronous so implementations can await access to component state (for example,
+/// an async lock or a request to a component task). Collectors that can snapshot immediately can
+/// return a ready future. Both the collection future and its owned result can be sent between tasks.
 ///
 /// ```
 /// use hopr_api::StateDump;
@@ -38,22 +44,28 @@ pub trait StateDump: Send + Sync {
 impl<T: StateDump + ?Sized> StateDump for &T {
     type Error = T::Error;
 
-    async fn state_dump(&self) -> Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error> {
-        (**self).state_dump().await
+    fn state_dump(
+        &self,
+    ) -> impl Future<Output = Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error>> + Send {
+        (**self).state_dump()
     }
 }
 impl<T: StateDump + ?Sized> StateDump for Box<T> {
     type Error = T::Error;
 
-    async fn state_dump(&self) -> Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error> {
-        (**self).state_dump().await
+    fn state_dump(
+        &self,
+    ) -> impl Future<Output = Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error>> + Send {
+        (**self).state_dump()
     }
 }
 impl<T: StateDump + ?Sized> StateDump for Arc<T> {
     type Error = T::Error;
 
-    async fn state_dump(&self) -> Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error> {
-        (**self).state_dump().await
+    fn state_dump(
+        &self,
+    ) -> impl Future<Output = Result<impl Serialize + DeserializeOwned + Send + 'static, Self::Error>> + Send {
+        (**self).state_dump()
     }
 }
 

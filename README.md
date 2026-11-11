@@ -39,17 +39,18 @@ use hopr_api::network::NetworkView;
 
 All modules are feature-gated:
 
-| Feature               | Module          | Description                                            |
-| --------------------- | --------------- | ------------------------------------------------------ |
-| `chain`               | `chain`         | On-chain operation APIs (accounts, channels, tickets…) |
-| `ct`                  | `ct`            | Cover traffic and probing API traits                   |
-| `graph`               | `graph`         | Network graph topology, QoS, routing costs             |
-| `network`             | `network`       | Network state, peer observations, connectivity         |
-| `node`                | `node`          | High-level HOPR node API traits and state machine      |
-| `node-session-client` | `node::session` | Session client for establishing HOPR sessions          |
-| `node-session-server` | `node::session` | Session server for processing incoming sessions        |
-| `tickets`             | `tickets`       | Winning ticket management and redemption               |
-| `full`                | _all_           | Enables all of the above + `serde`                     |
+| Feature               | Module          | Description                                             |
+| --------------------- | --------------- | ------------------------------------------------------- |
+| `chain`               | `chain`         | On-chain operation APIs (accounts, channels, tickets…)  |
+| `component`           | `component`     | Shared component operational state and diagnostic dumps |
+| `ct`                  | `ct`            | Cover traffic and probing API traits                    |
+| `graph`               | `graph`         | Network graph topology, QoS, routing costs              |
+| `network`             | `network`       | Network state, peer observations, connectivity          |
+| `node`                | `node`          | High-level HOPR node API traits and state machine       |
+| `node-session-client` | `node::session` | Session client for establishing HOPR sessions           |
+| `node-session-server` | `node::session` | Session server for processing incoming sessions         |
+| `tickets`             | `tickets`       | Winning ticket management and redemption                |
+| `full`                | _all_           | Enables all of the above + `serde`                      |
 
 ## Usage
 
@@ -91,5 +92,5 @@ States default to `Running` and are ordered by severity. Each implementation own
 The `serde` feature enables serialization and deserialization. Enable both `component` and `serde` to use `StateDump`, the optional asynchronous diagnostic interface.
 Generic callers can collect an opaque owned Serde snapshot through `state_dump().await`; concrete snapshot models and collection logic remain inside each implementing crate.
 The interface delegates through references, `Box` and `Arc`. Each implementation defines its snapshot schema and documents whether reads consume observations.
-Components requiring caller-supplied context may return an opaque configured view implementing `StateDump`.
+For components requiring caller-supplied context, the implementing crate can expose a separate constructor or method that accepts that context and returns a view implementing `StateDump`. Callers then invoke `state_dump()` on the view; `StateDump` itself does not construct or return views.
 Operational state and diagnostic collection errors remain separate; timers, logging and deadlines are not part of the shared interface.
