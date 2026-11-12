@@ -57,11 +57,16 @@ impl<E> SafeRegistrationError<E> {
 /// See [`ChainWriteAccountOperations::submission_failure`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, strum::EnumIs)]
 pub enum SubmissionFailure {
-    /// Nothing moved: the transaction was refused before it was broadcast, so no copy of it can
-    /// reach the chain and the value is still where it was.
+    /// This attempt was refused before any node accepted it, so it moved nothing and consumed no
+    /// nonce. A caller may retry it. It says nothing about earlier attempts of the same operation:
+    /// if one of those ended in [`Unknown`](Self::Unknown), it may still land.
     NotSubmitted,
-    /// The chain rejected the transaction, or the Safe's inner call failed. The transaction was
-    /// included and moved nothing.
+    /// The transaction was executed and reverted, or the Safe's inner call failed. Nothing moved as
+    /// of the block that included it. This is final only once that block is final under the chain
+    /// API's finality setting, so a caller must not resend while the block can still be reorged.
+    ///
+    /// A transaction rejected before it was submitted at all is [`NotSubmitted`](Self::NotSubmitted),
+    /// not this.
     Reverted,
     /// The transaction may have been broadcast (a timeout, a transport failure, an error the chain
     /// API cannot classify), so the value may or may not have moved. A caller must not treat it
@@ -82,6 +87,21 @@ pub trait ChainWriteAccountOperations {
     /// that from [`Self::Error`], which is opaque here; without this it has to downcast to the
     /// chain API's concrete error type. An implementation that can tell classifies the error; the
     /// default is the only answer that is safe without that knowledge, [`SubmissionFailure::Unknown`].
+    ///
+    /// # Retrying
+    ///
+    /// Resending is safe only after [`SubmissionFailure::NotSubmitted`]. After
+    /// [`SubmissionFailure::Unknown`] a caller must never resend without first checking the
+    /// on-chain state, since the earlier attempt may still land. After [`SubmissionFailure::Reverted`]
+    /// it waits for the including block to be final before resending.
+    ///
+    /// # What to pass
+    ///
+    /// The [`Self::Error`] of the failed call. For [`announce`](Self::announce) and
+    /// [`register_safe`](Self::register_safe) that is the wrapped `ProcessingError`, of
+    /// [`AnnouncementError`] and [`SafeRegistrationError`]. Their `AlreadyAnnounced` and
+    /// `AlreadyRegistered` variants carry no such error: they were returned without sending
+    /// anything, so nothing moved.
     fn submission_failure(&self, _error: &Self::Error) -> SubmissionFailure {
         SubmissionFailure::Unknown
     }
