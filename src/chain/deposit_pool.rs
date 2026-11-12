@@ -91,6 +91,15 @@ where
     /// Generates additional deposit data identified by `id`.
     async fn generate_deposit_data(&self, _id: &PixAddressId) -> Result<Self::PoolDepositData, Self::Error>;
 
+    /// Whether [`fund`](Self::fund) can move value into this pool.
+    ///
+    /// A pool whose funding is the Safe has nothing to move value into and answers `false`, so a
+    /// builder can refuse a funding policy for it before anything runs, instead of finding out
+    /// when the first `fund` call fails. The default is `true`.
+    fn accepts_funding(&self) -> bool {
+        true
+    }
+
     /// Moves `amount` from the node's Safe into the pool's own funding, from which
     /// [`PoolTransferSource::Funding`] transfers draw.
     ///
@@ -376,6 +385,20 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A pool accepts funding unless it says otherwise, and a smart pointer to a pool forwards the
+    /// answer of the pool it holds, including an override.
+    #[test]
+    fn a_pool_accepts_funding_by_default_and_through_a_pointer() {
+        assert!(DepositPool::<BjjKeypair>::accepts_funding(&MockPool::default()));
+        assert!(DepositPool::<BjjKeypair>::accepts_funding(&std::sync::Arc::new(
+            MockPool::default()
+        )));
+        assert!(DepositPool::<BjjKeypair>::accepts_funding(&&MockPool::default()));
+        assert!(DepositPool::<BjjKeypair>::accepts_funding(&Box::new(
+            MockPool::default()
+        )));
     }
 
     /// A distinct allocation id per `n`, built from bytes so the test needs no RNG feature.
