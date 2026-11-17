@@ -1,6 +1,6 @@
 use hopr_types::internal::routing::PathId;
 
-use super::{MeasurablePath, MeasurablePeer};
+use super::{MeasurablePath, MeasurablePeer, Probability};
 use crate::graph::{MeasurableEdge, MeasurableNode};
 
 /// The result of a transport-level probe over a transport path segment.
@@ -88,10 +88,10 @@ pub trait EdgeProtocolObservable {
 pub trait EdgeImmediateProtocolObservable {
     /// The ratio of acknowledged messages to sent messages for this immediate edge.
     ///
-    /// Returns `None` when insufficient messages have been sent to compute
-    /// a meaningful ratio. Returns `Some(rate)` in the range \[0.0, 1.0\]
-    /// where 1.0 means all messages were acknowledged.
-    fn ack_rate(&self) -> Option<f64>;
+    /// Returns `None` when insufficient messages have been sent to compute a meaningful ratio.
+    /// Returns `Some(rate)` in the closed interval `[0.0, 1.0]`, where `1.0` means all messages
+    /// were acknowledged and `0.0` means none were.
+    fn ack_rate(&self) -> Option<Probability>;
 }
 
 /// Trait for reading aggregated quality-of-service observations from a graph edge.
@@ -110,18 +110,19 @@ pub trait EdgeObservableRead {
     /// Transport level measurements performed in a transparent mode using looping measurements.
     fn intermediate_qos(&self) -> Option<&Self::IntermediateMeasurement>;
 
-    /// Score in `[0.0, 1.0]`; higher is better. `None` when neither stream has observations.
+    /// Score in the closed interval `[0.0, 1.0]`; higher is better. `None` when neither stream has
+    /// observations.
     ///
     /// Per RFC-0014 §4.2 the streams combine as `(imm + inter) / 2` only when both are present,
     /// else the single present one. "Present" means *has observations*, not *allocated* — a
     /// balance or connectivity update creates a stream without recording a probe, and averaging
     /// against that empty stream halves every edge only one stream can observe.
-    fn score(&self) -> Option<f64>;
+    fn score(&self) -> Option<Probability>;
 
-    /// How usable the edge's destination is as a relayer, in `[0.0, 1.0]`: `0.0` unusable, `1.0`
-    /// healthy, `None` not judged. Judged by the graph's owner from its own traffic; see
-    /// [`NetworkGraphUpdate::record_node_health`].
-    fn health(&self) -> Option<f64> {
+    /// How usable the edge's destination is as a relayer, in the closed interval `[0.0, 1.0]`:
+    /// `0.0` unusable, `1.0` healthy, `None` not judged. Judged by the graph's owner from its own
+    /// traffic; see [`NetworkGraphUpdate::record_node_health`].
+    fn health(&self) -> Option<Probability> {
         None
     }
 }
@@ -152,11 +153,11 @@ pub trait EdgeLinkObservable {
 
     /// A value representing the average success rate of probes.
     ///
-    /// It is from the range [0.0, 1.0]. The higher the value, the better the score.
+    /// It is from the closed interval `[0.0, 1.0]`. The higher the value, the better the score.
     ///
     /// `None` when nothing has been recorded: an all-failed stream holds `0.0`, and so does an
     /// unprobed one.
-    fn average_probe_rate(&self) -> Option<f64>;
+    fn average_probe_rate(&self) -> Option<Probability>;
 
     /// Whether any outcome has been recorded, successful or failed.
     ///
@@ -165,13 +166,13 @@ pub trait EdgeLinkObservable {
         self.average_probe_rate().is_some()
     }
 
-    /// Score in `[0.0, 1.0]`; higher is better.
+    /// Score in the closed interval `[0.0, 1.0]`; higher is better.
     ///
     /// `None` = no observations, `Some(0.0)` = measured and unusable. Cost functions need the
     /// distinction: unobserved edges get `edge_penalty` to stay discoverable, measured-dead ones
     /// are starved. Collapsing both to `0.0` ranks a never-working relay above a partly-working
     /// one.
-    fn score(&self) -> Option<f64>;
+    fn score(&self) -> Option<Probability>;
 }
 
 /// Lifecycle events observed for a node in the network.
@@ -312,15 +313,20 @@ pub trait NetworkGraphUpdate {
     where
         N: MeasurableNode + Clone + Send + Sync + 'static;
 
-    /// Records how usable `node` is as a relayer, in `[0.0, 1.0]`, as judged by the graph's owner
-    /// from its own traffic. Every edge into `node` reports it through [`EdgeObservableRead::health`].
-    fn record_node_health(&self, node: &hopr_types::crypto::types::OffchainPublicKey, health: f64) {
+    /// Records how usable `node` is as a relayer, in the closed interval `[0.0, 1.0]`, as judged
+    /// by the graph's owner from its own traffic. Every edge into `node` reports it through
+    /// [`EdgeObservableRead::health`].
+    ///
+    /// `0.0` is representable because the value functions must still reject an unusable relayer.
+    /// A producer that never judges a relayer exactly zero is a producer-side expectation, not an
+    /// invariant the type enforces.
+    fn record_node_health(&self, node: &hopr_types::crypto::types::OffchainPublicKey, health: Probability) {
         let _ = (node, health);
     }
 
     /// [`record_node_health`](Self::record_node_health) for several nodes at once, so an
     /// implementation can apply them under one write.
-    fn record_nodes_health(&self, healths: &[(hopr_types::crypto::types::OffchainPublicKey, f64)]) {
+    fn record_nodes_health(&self, healths: &[(hopr_types::crypto::types::OffchainPublicKey, Probability)]) {
         for (node, health) in healths {
             self.record_node_health(node, *health);
         }
@@ -427,6 +433,7 @@ pub trait NetworkGraphConnectivity {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Context;
     use hopr_types::crypto::{
         prelude::{Keypair, OffchainKeypair},
         types::OffchainPublicKey,
@@ -435,7 +442,7 @@ mod tests {
     use super::*;
 
     #[derive(Default)]
-    struct RecordedHealth(std::sync::Mutex<Vec<(OffchainPublicKey, f64)>>);
+    struct RecordedHealth(std::sync::Mutex<Vec<(OffchainPublicKey, Probability)>>);
 
     impl NetworkGraphUpdate for RecordedHealth {
         fn set_ticket_face_value(&self, _: Balance) {}
@@ -453,16 +460,18 @@ mod tests {
         {
         }
 
-        fn record_node_health(&self, node: &OffchainPublicKey, health: f64) {
+        fn record_node_health(&self, node: &OffchainPublicKey, health: Probability) {
             self.0.lock().unwrap().push((*node, health));
         }
     }
 
     #[test]
-    fn record_nodes_health_should_record_each_node_in_order() {
+    fn record_nodes_health_should_record_each_node_in_order() -> anyhow::Result<()> {
         let (a, b) = (*OffchainKeypair::random().public(), *OffchainKeypair::random().public());
+        let degraded = Probability::new(0.25).context("0.25 is a valid probability")?;
         let graph = RecordedHealth::default();
-        graph.record_nodes_health(&[(a, 0.0), (b, 0.25)]);
-        assert_eq!(*graph.0.lock().unwrap(), vec![(a, 0.0), (b, 0.25)]);
+        graph.record_nodes_health(&[(a, Probability::ZERO), (b, degraded)]);
+        assert_eq!(*graph.0.lock().unwrap(), vec![(a, Probability::ZERO), (b, degraded)]);
+        Ok(())
     }
 }

@@ -8,15 +8,19 @@
 //! - `HoprGraphApi` — composite of all graph traits (full read+write access)
 //! - `HoprGraphReadApi` — composite of view+traverse (read-only access)
 //! - `ValueFn` — value function trait for path selection
+//! - `Probability` — validated value in the closed interval `[0.0, 1.0]`
 //! - Edge observable traits for quality measurements (QoS, latency, capacity)
 
 /// Edge/path value-function utilities used by graph traversal.
 pub mod function;
+/// Validated probability values for graph observations.
+pub mod probability;
 /// Graph operation traits and observability interfaces.
 pub mod traits;
 /// Shared graph telemetry and measurement types.
 pub mod types;
 
+pub use probability::{Probability, ProbabilityError};
 pub use traits::{
     EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeObservable, EdgeObservableRead, NetworkGraphConnectivity,
     NetworkGraphTraverse, NetworkGraphUpdate, NetworkGraphView, NetworkGraphWrite, ValueFn,
