@@ -39,12 +39,7 @@ fn score_or_penalize(cost: f64, score: Option<Probability>, penalty: Probability
     // otherwise drive the cost to zero and prune the edge — the same outcome the floor exists to
     // prevent, reachable by configuration alone.
     let multiplier = score.unwrap_or(penalty);
-    let floored = if multiplier < MEASURED_DEAD_FLOOR {
-        MEASURED_DEAD_FLOOR
-    } else {
-        multiplier
-    };
-    cost * floored.get()
+    cost * multiplier.max(MEASURED_DEAD_FLOOR).get()
 }
 
 /// Scales the value of an edge into a relayer by its health; [`Probability::ZERO`] rejects the edge.

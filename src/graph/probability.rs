@@ -60,6 +60,16 @@ impl Probability {
         Self((self.0 + other.0) / 2.0)
     }
 
+    /// Returns the larger of `self` and `other`.
+    pub const fn max(self, other: Self) -> Self {
+        if other.0 > self.0 { other } else { self }
+    }
+
+    /// Returns the smaller of `self` and `other`.
+    pub const fn min(self, other: Self) -> Self {
+        if other.0 < self.0 { other } else { self }
+    }
+
     /// Returns the underlying `f64`, guaranteed to lie in `[0.0, 1.0]`.
     pub const fn get(self) -> f64 {
         self.0
@@ -178,6 +188,22 @@ mod tests {
     fn probability_should_convert_into_a_plain_f64() {
         assert_eq!(f64::from(Probability::ONE), 1.0);
         assert_eq!(f64::from(Probability::ZERO), 0.0);
+    }
+
+    #[rstest]
+    #[case::endpoints(Probability::ZERO, Probability::ONE, Probability::ONE, Probability::ZERO)]
+    #[case::mid_range(probability(0.25), probability(0.75), probability(0.75), probability(0.25))]
+    #[case::equal(probability(0.5), probability(0.5), probability(0.5), probability(0.5))]
+    fn probability_should_order_by_value(
+        #[case] left: Probability,
+        #[case] right: Probability,
+        #[case] maximum: Probability,
+        #[case] minimum: Probability,
+    ) {
+        assert_eq!(left.max(right), maximum);
+        assert_eq!(right.max(left), maximum);
+        assert_eq!(left.min(right), minimum);
+        assert_eq!(right.min(left), minimum);
     }
 
     #[cfg(feature = "serde")]
