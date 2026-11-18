@@ -17,10 +17,9 @@ pub type BasicValueFn<C, W> = Arc<dyn Fn(C, &W, usize) -> C + Send + Sync>;
 /// arbitrarily close to zero — but because zero costs harm twice: an all-zero candidate set yields no
 /// route at all, and a non-positive cost is pruned. Probe generation shares these value functions, so
 /// a pruned edge stops being probed and can never recover, which RFC-0010 §4.2.3 forbids.
-const MEASURED_DEAD_FLOOR: Probability = match Probability::new(1e-9) {
-    Ok(floor) => floor,
-    Err(_) => panic!("MEASURED_DEAD_FLOOR must be a valid probability"),
-};
+fn measured_dead_floor() -> Probability {
+    Probability::try_from(1e-9).expect("MEASURED_DEAD_FLOOR must be a valid probability")
+}
 
 /// Face value assumed when a caller supplies none.
 ///
@@ -33,13 +32,13 @@ pub fn default_ticket_face_value() -> Balance {
 }
 
 /// Scales value by score: `None` (unobserved) applies `penalty`; `Some(s)` scales by `s`, floored at
-/// [`MEASURED_DEAD_FLOOR`].
+/// [`measured_dead_floor`].
 fn score_or_penalize(cost: f64, score: Option<Probability>, penalty: Probability) -> f64 {
     // Both branches are floored. A `Probability::ZERO` penalty is representable, and it would
     // otherwise drive the cost to zero and prune the edge — the same outcome the floor exists to
     // prevent, reachable by configuration alone.
     let multiplier = score.unwrap_or(penalty);
-    cost * multiplier.max(MEASURED_DEAD_FLOOR).get()
+    cost * multiplier.max(measured_dead_floor()).get()
 }
 
 /// Scales the value of an edge into a relayer by its health; [`Probability::ZERO`] rejects the edge.
@@ -1238,7 +1237,7 @@ mod tests {
         )?;
         let sound = edge_value(Direction::Forward, 3, 1, &relayed_only())?;
 
-        // Both bounds are literal on purpose. Comparing against `MEASURED_DEAD_FLOOR` would move
+        // Both bounds are literal on purpose. Comparing against `measured_dead_floor` would move
         // with the constant and assert nothing about it.
         assert!(
             measured_dead > 0.0,
