@@ -4,6 +4,7 @@ ignore = [
   "RUSTSEC-2024-0388", # 'derivative' in 'alloy' [unmaintained],
   "RUSTSEC-2026-0173", # 'proc-macro-error2' via 'aquamarine' in 'hopr-types' [unmaintained], waiting on upstream update
   "RUSTSEC-2026-0249", # `smartstring` unmaintained, requires `opentelemetry-prometheus-text-exporter` > 0.3.0
+  "RUSTSEC-2026-0387", # `crypto-bigint` 0.5.5 via `elliptic-curve` 0.13.8 and `k256` 0.13.4 (alloy); patched in 0.7.6, blocked until the alloy side leaves `k256` 0.13
   "RUSTSEC-2026-0543", # `chrono` 0.4.45 unmaintained; `hopr-types` 6.0.1 enables it through `serde_with` 3.24.0. No patched version exists. Remove when the tree leaves chrono; tracked in hoprnet/hopr-api#175.
 ]
 informational_warnings = ["unmaintained"]
