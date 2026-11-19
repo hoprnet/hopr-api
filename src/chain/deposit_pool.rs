@@ -91,6 +91,15 @@ where
     /// Generates additional deposit data identified by `id`.
     async fn generate_deposit_data(&self, _id: &PixAddressId) -> Result<Self::PoolDepositData, Self::Error>;
 
+    /// Whether [`fund`](Self::fund) can move value into this pool.
+    ///
+    /// A pool whose funding is the Safe has nothing to move value into and answers `false`, so a
+    /// builder can refuse a funding policy for it before anything runs, instead of finding out
+    /// when the first `fund` call fails. The default is `true`.
+    fn accepts_funding(&self) -> bool {
+        true
+    }
+
     /// Moves `amount` from the node's Safe into the pool's own funding, from which
     /// [`PoolTransferSource::Funding`] transfers draw.
     ///
@@ -276,6 +285,8 @@ mod tests {
     #[derive(Default)]
     struct MockPool {
         fail_for: Vec<BjjPublicKey>,
+        /// Whether the pool overrides `accepts_funding` to refuse.
+        funding_refused: bool,
         seen: Mutex<Vec<PixAddressId>>,
     }
 
@@ -283,6 +294,13 @@ mod tests {
         fn fails_for(dst: &BjjPublicKey) -> Self {
             Self {
                 fail_for: vec![*dst],
+                ..Default::default()
+            }
+        }
+
+        fn refusing_funding() -> Self {
+            Self {
+                funding_refused: true,
                 ..Default::default()
             }
         }
@@ -341,6 +359,10 @@ mod tests {
             }
         }
 
+        fn accepts_funding(&self) -> bool {
+            !self.funding_refused
+        }
+
         async fn fund(&self, _amount: HoprBalance) -> Result<(), Self::Error> {
             Ok(())
         }
@@ -376,6 +398,30 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A pool accepts funding unless it says otherwise, and a smart pointer to a pool forwards the
+    /// answer of the pool it holds: the default for one that does not override it, the override for
+    /// one that refuses.
+    #[test]
+    fn a_pool_accepts_funding_by_default_and_through_a_pointer() {
+        use std::sync::Arc;
+
+        fn answer(pool: impl DepositPool<BjjKeypair>) -> bool {
+            pool.accepts_funding()
+        }
+
+        assert!(answer(MockPool::default()));
+        let plain = MockPool::default();
+        assert!(answer(&plain));
+        assert!(answer(Box::new(MockPool::default())));
+        assert!(answer(Arc::new(MockPool::default())));
+
+        assert!(!answer(MockPool::refusing_funding()));
+        let refusing = MockPool::refusing_funding();
+        assert!(!answer(&refusing));
+        assert!(!answer(Box::new(MockPool::refusing_funding())));
+        assert!(!answer(Arc::new(MockPool::refusing_funding())));
     }
 
     /// A distinct allocation id per `n`, built from bytes so the test needs no RNG feature.

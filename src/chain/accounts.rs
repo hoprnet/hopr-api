@@ -52,11 +52,59 @@ impl<E> SafeRegistrationError<E> {
     }
 }
 
+/// What a caller may assume about value it tried to move, given a failed write.
+///
+/// See [`ChainWriteAccountOperations::submission_failure`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, strum::EnumIs)]
+pub enum SubmissionFailure {
+    /// This attempt was refused before any node accepted it, so it moved nothing and consumed no
+    /// nonce. A caller may retry it. It says nothing about earlier attempts of the same operation:
+    /// if one of those ended in [`Unknown`](Self::Unknown), it may still land.
+    NotSubmitted,
+    /// The transaction was executed and reverted, or the Safe's inner call failed. Nothing moved as
+    /// of the block that included it. This is final only once that block is final under the chain
+    /// API's finality setting, so a caller must not resend while the block can still be reorged.
+    ///
+    /// A transaction rejected before it was submitted at all is [`NotSubmitted`](Self::NotSubmitted),
+    /// not this.
+    Reverted,
+    /// The transaction may have been broadcast (a timeout, a transport failure, an error the chain
+    /// API cannot classify), so the value may or may not have moved. A caller must not treat it
+    /// as unsent.
+    Unknown,
+}
+
 /// On-chain write operations regarding on-chain node accounts.
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Box, Arc)]
 pub trait ChainWriteAccountOperations {
     type Error: std::error::Error + Send + Sync + 'static;
+
+    /// What the caller may assume about value it tried to move when one of the writes of this trait
+    /// (or the pending future it returned) failed with `error`.
+    ///
+    /// A strategy that must know whether a failed transfer left its funds untouched cannot learn
+    /// that from [`Self::Error`], which is opaque here; without this it has to downcast to the
+    /// chain API's concrete error type. An implementation that can tell classifies the error; the
+    /// default is the only answer that is safe without that knowledge, [`SubmissionFailure::Unknown`].
+    ///
+    /// # Retrying
+    ///
+    /// Resending is safe only after [`SubmissionFailure::NotSubmitted`]. After
+    /// [`SubmissionFailure::Unknown`] a caller must never resend without first checking the
+    /// on-chain state, since the earlier attempt may still land. After [`SubmissionFailure::Reverted`]
+    /// it waits for the including block to be final before resending.
+    ///
+    /// # What to pass
+    ///
+    /// The [`Self::Error`] of the failed call. For [`announce`](Self::announce) and
+    /// [`register_safe`](Self::register_safe) that is the wrapped `ProcessingError`, of
+    /// [`AnnouncementError`] and [`SafeRegistrationError`]. Their `AlreadyAnnounced` and
+    /// `AlreadyRegistered` variants carry no such error: they were returned without sending
+    /// anything, so nothing moved.
+    fn submission_failure(&self, _error: &Self::Error) -> SubmissionFailure {
+        SubmissionFailure::Unknown
+    }
 
     /// Announces transport key and list of multi addresses.
     async fn announce(
@@ -177,4 +225,78 @@ pub trait ChainReadAccountOperations {
         offchain_key: &OffchainPublicKey,
         timeout: std::time::Duration,
     ) -> Result<AccountEntry, Self::Error>;
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("failed")]
+    struct Failed;
+
+    /// Implements only the required methods, so everything it answers about a failure is the
+    /// trait's default.
+    struct Plain;
+
+    #[async_trait::async_trait]
+    impl ChainWriteAccountOperations for Plain {
+        type Error = Failed;
+
+        async fn announce(
+            &self,
+            _multiaddrs: &[Multiaddr],
+            _key: &OffchainKeypair,
+        ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, AnnouncementError<Self::Error>> {
+            Err(AnnouncementError::AlreadyAnnounced)
+        }
+
+        async fn withdraw<C: Currency + Send>(
+            &self,
+            _balance: Balance<C>,
+            _recipient: &Address,
+        ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error> {
+            Err(Failed)
+        }
+
+        async fn send_erc777(
+            &self,
+            _balance: HoprBalance,
+            _recipient: &Address,
+            _payload: &Erc777Payload,
+        ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error> {
+            Err(Failed)
+        }
+
+        async fn withdraw_from_signer<C: Currency + Send>(
+            &self,
+            _signer: &ChainKeypair,
+            _balance: Balance<C>,
+            _recipient: &Address,
+        ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, Self::Error> {
+            Err(Failed)
+        }
+
+        async fn register_safe(
+            &self,
+            _safe_address: &Address,
+        ) -> Result<BoxFuture<'life0, Result<ChainReceipt, Self::Error>>, SafeRegistrationError<Self::Error>> {
+            Err(SafeRegistrationError::ProcessingError(Failed))
+        }
+    }
+
+    /// An implementation that cannot classify its errors must not claim that nothing moved, and
+    /// the provided method is forwarded by the `auto_impl` pointer types.
+    #[test]
+    fn a_failure_is_unknown_by_default_and_through_a_pointer() {
+        assert_eq!(Plain.submission_failure(&Failed), SubmissionFailure::Unknown);
+        assert_eq!(Arc::new(Plain).submission_failure(&Failed), SubmissionFailure::Unknown);
+        fn classify(ops: impl ChainWriteAccountOperations<Error = Failed>) -> SubmissionFailure {
+            ops.submission_failure(&Failed)
+        }
+        assert_eq!(classify(&Plain), SubmissionFailure::Unknown);
+        assert_eq!(Box::new(Plain).submission_failure(&Failed), SubmissionFailure::Unknown);
+    }
 }
