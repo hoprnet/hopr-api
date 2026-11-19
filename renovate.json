@@ -48,6 +48,12 @@
       "labels": ["security"],
       "groupName": "cargo security updates",
       "commitMessageTopic": "Cargo security updates"
+    },
+    {
+      "description": "Hold libp2p-identity at 0.2.x; 0.3.x forces a full libp2p update",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["libp2p-identity"],
+      "enabled": false
     }
   ]
 }
