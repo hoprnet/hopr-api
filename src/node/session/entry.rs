@@ -1,6 +1,6 @@
-//! Session client operations for establishing HOPR sessions.
+//! Session entry operations for establishing HOPR sessions.
 //!
-//! Gated behind the `node-session-client` feature.
+//! Gated behind the `node-session-entry` feature.
 
 use futures::io::{AsyncRead, AsyncWrite};
 
@@ -13,7 +13,7 @@ use crate::Address;
 /// out of the API crate.
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Arc)]
-pub trait HoprSessionClientOperations: Send + Sync {
+pub trait HoprSessionEntryOperations: Send + Sync {
     /// An established session implementing async read/write.
     type Session: AsyncRead + AsyncWrite + Send + Unpin;
     /// Handle for controlling a session after creation (e.g. keep-alive, SURB config).
@@ -38,3 +38,13 @@ pub trait HoprSessionClientOperations: Send + Sync {
         config: Self::Config,
     ) -> Result<(Self::Session, Self::SessionConfigurator), Self::Error>;
 }
+
+/// Deprecated name of [`HoprSessionEntryOperations`].
+///
+/// Bounds written against this name keep working, because every [`HoprSessionEntryOperations`]
+/// implementor satisfies it. Implementors must implement the new trait instead.
+#[deprecated(note = "renamed to `HoprSessionEntryOperations`")]
+pub trait HoprSessionClientOperations: HoprSessionEntryOperations {}
+
+#[allow(deprecated)]
+impl<T: HoprSessionEntryOperations + ?Sized> HoprSessionClientOperations for T {}

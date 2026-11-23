@@ -1,11 +1,25 @@
 //! Session traits for HOPR node interactions.
 //!
-//! - `client` — session client operations (establishing outgoing sessions)
-//! - `server` — session server operations (processing incoming sessions)
+//! - `entry` — session entry operations (establishing outgoing sessions)
+//! - `exit` — session exit operations (processing incoming sessions)
 
-#[cfg(feature = "node-session-client")]
-pub mod client;
+#[cfg(feature = "node-session-entry")]
+pub mod entry;
 
-#[cfg(feature = "node-session-server")]
-/// Session server traits for handling incoming sessions.
-pub mod server;
+#[cfg(feature = "node-session-exit")]
+/// Session exit traits for handling incoming sessions.
+pub mod exit;
+
+/// Deprecated path of [`entry`].
+#[cfg(feature = "node-session-entry")]
+#[deprecated(note = "renamed to `entry`")]
+pub mod client {
+    pub use super::entry::*;
+}
+
+/// Deprecated path of [`exit`].
+#[cfg(feature = "node-session-exit")]
+#[deprecated(note = "renamed to `exit`")]
+pub mod server {
+    pub use super::exit::*;
+}

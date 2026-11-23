@@ -1,10 +1,10 @@
-//! Session server trait for processing incoming HOPR sessions.
+//! Session exit trait for processing incoming HOPR sessions.
 //!
-//! Gated behind the `node-session-server` feature.
+//! Gated behind the `node-session-exit` feature.
 
 use hopr_types::network::{SessionId, SessionTarget};
 
-/// An incoming HOPR session to be processed by a [`HoprSessionServer`].
+/// An incoming HOPR session to be processed by a [`HoprSessionExit`].
 ///
 /// Generic over the concrete session byte-stream `S` (supplied by the implementor,
 /// typically hopr-lib), keeping transport-level types out of this crate. Only the
@@ -19,8 +19,8 @@ pub struct IncomingSession<S> {
     pub target: SessionTarget,
 }
 
-/// What a [`HoprSessionServer`] is told about a session it is asked to
-/// [admit](HoprSessionServer::admit).
+/// What a [`HoprSessionExit`] is told about a session it is asked to
+/// [admit](HoprSessionExit::admit).
 ///
 /// Describes a session that does not exist yet: it names the peer's intent, not a byte-stream. The
 /// [`SessionTarget`] arrives exactly as the initiating peer sent it — in particular a
@@ -110,12 +110,12 @@ impl OfferedIncentivization {
     }
 }
 
-/// The terms a [`HoprSessionServer`] admits a session on.
+/// The terms a [`HoprSessionExit`] admits a session on.
 ///
 /// Every field is an *override* of the node's configured value, and [`None`] — which is what
 /// [`Default`] gives on every field — leaves that value alone. A server with nothing to say about a
 /// session therefore returns `SessionAdmissionDecision::default()` and gets the node's own policy,
-/// which is what the default [`admit`](HoprSessionServer::admit) does.
+/// which is what the default [`admit`](HoprSessionExit::admit) does.
 ///
 /// `#[non_exhaustive]`: start from [`Default`] and use the `with_*` methods, so that terms beyond
 /// today's incentivization ones can be added without breaking implementors.
@@ -156,10 +156,10 @@ impl SessionAdmissionDecision {
 /// The concrete session type is defined by the implementor (typically hopr-lib),
 /// keeping transport-level types out of the API crate.
 ///
-/// Nodes that do not run a session server simply omit calling `with_session_server`.
+/// Nodes that do not run a session exit simply omit calling `with_session_exit`.
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(Arc)]
-pub trait HoprSessionServer {
+pub trait HoprSessionExit {
     /// An incoming session to be processed.
     type Session: Send;
     /// Error type for session processing.
@@ -188,6 +188,16 @@ pub trait HoprSessionServer {
     async fn process(&self, session: Self::Session) -> Result<(), Self::Error>;
 }
 
+/// Deprecated name of [`HoprSessionExit`].
+///
+/// Bounds written against this name keep working, because every [`HoprSessionExit`] implementor
+/// satisfies it. Implementors must implement the new trait instead.
+#[deprecated(note = "renamed to `HoprSessionExit`")]
+pub trait HoprSessionServer: HoprSessionExit {}
+
+#[allow(deprecated)]
+impl<T: HoprSessionExit + ?Sized> HoprSessionServer for T {}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -208,7 +218,7 @@ mod tests {
     struct ProcessOnlyServer;
 
     #[async_trait::async_trait]
-    impl HoprSessionServer for ProcessOnlyServer {
+    impl HoprSessionExit for ProcessOnlyServer {
         type Error = NeverError;
         type Session = ();
 
