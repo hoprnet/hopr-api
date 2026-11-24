@@ -1,20 +1,25 @@
 use std::sync::Arc;
 
-use super::traits::{
-    Balance, EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeNetworkObservableRead, EdgeObservableRead,
-    EdgeProtocolObservable, ValueFn,
+use super::{
+    Probability,
+    traits::{
+        Balance, EdgeImmediateProtocolObservable, EdgeLinkObservable, EdgeNetworkObservableRead, EdgeObservableRead,
+        EdgeProtocolObservable, ValueFn,
+    },
 };
 
 /// A shared value function accepting `(current_value, edge_weight, path_index) -> new_value`.
 pub type BasicValueFn<C, W> = Arc<dyn Fn(C, &W, usize) -> C + Send + Sync>;
 
-/// Floor applied to a measured-dead stream, i.e. one scoring `Some(0.0)`.
+/// Floor applied to a measured-dead stream, i.e. one scoring [`Probability::ZERO`].
 ///
 /// Kept strictly positive, not to outrank degraded edges — no fixed constant can, since scores decay
 /// arbitrarily close to zero — but because zero costs harm twice: an all-zero candidate set yields no
 /// route at all, and a non-positive cost is pruned. Probe generation shares these value functions, so
 /// a pruned edge stops being probed and can never recover, which RFC-0010 §4.2.3 forbids.
-const MEASURED_DEAD_FLOOR: f64 = 1e-9;
+fn measured_dead_floor() -> Probability {
+    Probability::try_from(1e-9).expect("MEASURED_DEAD_FLOOR must be a valid probability")
+}
 
 /// Face value assumed when a caller supplies none.
 ///
@@ -27,26 +32,22 @@ pub fn default_ticket_face_value() -> Balance {
 }
 
 /// Scales value by score: `None` (unobserved) applies `penalty`; `Some(s)` scales by `s`, floored at
-/// [`MEASURED_DEAD_FLOOR`].
-fn score_or_penalize(cost: f64, score: Option<f64>, penalty: f64) -> f64 {
-    // Both branches are floored. `penalty` is caller-supplied and clamped to `[0.0, 1.0]`, so a
-    // configured `0.0` would drive the cost to zero and prune the edge — the same outcome the floor
-    // exists to prevent, reachable by configuration alone.
-    let multiplier = match score {
-        None => penalty,
-        Some(score) => score,
-    };
-    cost * multiplier.max(MEASURED_DEAD_FLOOR)
+/// [`measured_dead_floor`].
+fn score_or_penalize(cost: f64, score: Option<Probability>, penalty: Probability) -> f64 {
+    // Both branches are floored. A `Probability::ZERO` penalty is representable, and it would
+    // otherwise drive the cost to zero and prune the edge — the same outcome the floor exists to
+    // prevent, reachable by configuration alone.
+    let multiplier = score.unwrap_or(penalty);
+    cost * multiplier.max(measured_dead_floor()).get()
 }
 
-/// Scales the value of an edge into a relayer by its health, clamped to `[0.0, 1.0]`; `0.0` rejects
-/// the edge and a NaN health counts as unjudged. A rejected edge (`<= 0.0`) is passed through:
-/// negating it to reject would accept it instead.
-fn scale_by_health(value: f64, health: Option<f64>) -> f64 {
-    match health.filter(|health| !health.is_nan()) {
+/// Scales the value of an edge into a relayer by its health; [`Probability::ZERO`] rejects the edge.
+/// A rejected edge (`<= 0.0`) is passed through: negating it to reject would accept it instead.
+fn scale_by_health(value: f64, health: Option<Probability>) -> f64 {
+    match health {
         _ if value <= 0.0 => value,
-        Some(health) if health <= 0.0 => -value,
-        Some(health) => value * health.min(1.0),
+        Some(health) if health == Probability::ZERO => -value,
+        Some(health) => value * health.get(),
         None => value,
     }
 }
@@ -54,13 +55,13 @@ fn scale_by_health(value: f64, health: Option<f64>) -> f64 {
 /// Applies the ack rate as a value modifier for immediate edges.
 ///
 /// When the ack rate is available and below `min_ack_rate`, the edge is rejected.
-/// When available and above the threshold, the value is scaled by the ack rate.
+/// When available and at or above the threshold, the value is scaled by the ack rate.
 /// When unavailable (insufficient data), the penalty multiplier is applied.
-fn apply_ack_rate(ack_rate: Option<f64>, cost: f64, min_ack_rate: f64, penalty: f64) -> f64 {
+fn apply_ack_rate(ack_rate: Option<Probability>, cost: f64, min_ack_rate: Probability, penalty: Probability) -> f64 {
     match ack_rate {
         Some(rate) if rate < min_ack_rate => -cost,
-        Some(rate) => cost * rate,
-        None => cost * penalty,
+        Some(rate) => cost * rate.get(),
+        None => cost * penalty.get(),
     }
 }
 
@@ -105,7 +106,7 @@ fn balance_suffices(balance: Option<Balance>, remaining_hops: usize, ticket_face
 fn require_funding<W: EdgeObservableRead>(
     observation: &W,
     cost: f64,
-    penalty: f64,
+    penalty: Probability,
     remaining_hops: usize,
     ticket_face_value: Balance,
 ) -> f64 {
@@ -174,12 +175,14 @@ where
 {
     /// Build a forward HOPR value function for full graph traversals.
     ///
-    /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
-    /// to edges lacking probe-based quality observations.
+    /// `penalty` is the penalizing multiplier applied to edges lacking probe-based quality
+    /// observations.
     ///
-    /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
-    /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
-    /// threshold are rejected.
+    /// `min_ack_rate` is the minimum acceptable message acknowledgment rate for the immediate peer.
+    /// Edges with an ack rate below this threshold are rejected.
+    ///
+    /// Both are [`Probability`] values, so the caller validates them at construction instead of
+    /// this function clamping silently.
     ///
     /// - **First edge**: requires connectivity and a balance that funds the rest of the path; scores by the aggregate
     ///   of the immediate and intermediate observations, then applies the ack rate modifier.
@@ -192,13 +195,11 @@ where
     ///   fares as a relayer.
     pub fn forward(
         length: std::num::NonZeroUsize,
-        penalty: f64,
-        min_ack_rate: f64,
+        penalty: Probability,
+        min_ack_rate: Probability,
         ticket_face_value: Option<Balance>,
     ) -> Self {
         let length = length.get();
-        let penalty = penalty.clamp(0.0, 1.0);
-        let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
         // Resolved here rather than per edge: the face value is network-wide and fixed for the
         // lifetime of this function, so the path search should not re-derive it for every edge.
         let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
@@ -234,7 +235,7 @@ where
                 }
 
                 // Last hop is not monetized — penalize but do not reject
-                cost * penalty
+                cost * penalty.get()
             }
             0 => {
                 // First edge: require a connected peer whose channel can fund the rest of the path
@@ -270,12 +271,14 @@ where
 
     /// Build a HOPR value function for full graph traversals in the return direction.
     ///
-    /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
-    /// to edges lacking probe-based quality observations.
+    /// `penalty` is the penalizing multiplier applied to edges lacking probe-based quality
+    /// observations.
     ///
-    /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
-    /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
-    /// threshold are rejected.
+    /// `min_ack_rate` is the minimum acceptable message acknowledgment rate for the immediate peer.
+    /// Edges with an ack rate below this threshold are rejected.
+    ///
+    /// Both are [`Probability`] values, so the caller validates them at construction instead of
+    /// this function clamping silently.
     ///
     /// Used when the planner (`me`) constructs the return path `dest -> relay -> me`.
     /// The first edge (`dest -> relay`) has relaxed requirements compared to
@@ -288,13 +291,11 @@ where
     ///   an unusable relayer rejects the edge.
     pub fn returning(
         length: std::num::NonZeroUsize,
-        penalty: f64,
-        min_ack_rate: f64,
+        penalty: Probability,
+        min_ack_rate: Probability,
         ticket_face_value: Option<Balance>,
     ) -> Self {
         let length = length.get();
-        let penalty = penalty.clamp(0.0, 1.0);
-        let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
         // Resolved here rather than per edge: the face value is network-wide and fixed for the
         // lifetime of this function, so the path search should not re-derive it for every edge.
         let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
@@ -332,12 +333,14 @@ where
 
     /// Build a value function for simple forward paths without the final loopback.
     ///
-    /// `penalty` is clamped to `[0.0, 1.0]` — the penalizing multiplier applied
-    /// to edges lacking probe-based quality observations.
+    /// `penalty` is the penalizing multiplier applied to edges lacking probe-based quality
+    /// observations.
     ///
-    /// `min_ack_rate` is clamped to `[0.0, 1.0]` — the minimum acceptable message
-    /// acknowledgment rate for the immediate peer. Edges with an ack rate below this
-    /// threshold are rejected.
+    /// `min_ack_rate` is the minimum acceptable message acknowledgment rate for the immediate peer.
+    /// Edges with an ack rate below this threshold are rejected.
+    ///
+    /// Both are [`Probability`] values, so the caller validates them at construction instead of
+    /// this function clamping silently.
     ///
     /// - **First edge**: same as [`EdgeValueFn::forward`].
     /// - **All other edges**: require a funding balance; the `penalty` penalizing multiplier is applied when probe
@@ -351,13 +354,11 @@ where
     /// the verdict.
     pub fn forward_without_self_loopback(
         length: std::num::NonZeroUsize,
-        penalty: f64,
-        min_ack_rate: f64,
+        penalty: Probability,
+        min_ack_rate: Probability,
         ticket_face_value: Option<Balance>,
     ) -> Self {
         let length = length.get();
-        let penalty = penalty.clamp(0.0, 1.0);
-        let min_ack_rate = min_ack_rate.clamp(0.0, 1.0);
         // Resolved here rather than per edge: the face value is network-wide and fixed for the
         // lifetime of this function, so the path search should not re-derive it for every edge.
         let ticket_face_value = ticket_face_value.unwrap_or_else(default_ticket_face_value);
@@ -409,14 +410,22 @@ mod tests {
         EdgeProtocolObservable, EdgeTransportMeasurement,
     };
 
-    const TEST_PENALTY: f64 = 0.5;
-    const TEST_MIN_ACK_RATE: f64 = 0.1;
+    const TEST_PENALTY: Probability = probability(0.5);
+    const TEST_MIN_ACK_RATE: Probability = probability(0.1);
     /// Probe score well clear of every threshold under test.
-    const GOOD_SCORE: f64 = 0.95;
+    const GOOD_SCORE: Probability = probability(0.95);
     /// Ack rate comfortably above [`TEST_MIN_ACK_RATE`].
-    const GOOD_ACK: f64 = 0.9;
+    const GOOD_ACK: Probability = probability(0.9);
     /// Balance that funds any path length used here.
     const FUNDED: u64 = 1_000;
+
+    /// Builds a [`Probability`] for fixtures, panicking on an out-of-range literal.
+    const fn probability(value: f64) -> Probability {
+        match Probability::new(value) {
+            Ok(probability) => probability,
+            Err(_) => panic!("test fixture must be a valid probability"),
+        }
+    }
 
     // ── Stubs ───────────────────────────────────────────────────────────
 
@@ -424,9 +433,10 @@ mod tests {
     #[derive(Debug, Default, Clone, serde::Serialize)]
     struct StubImmediate {
         connected: Option<bool>,
-        /// `None` models a stream with no observations; `Some(0.0)` one measured and found dead.
-        score: Option<f64>,
-        ack_rate: Option<f64>,
+        /// `None` models a stream with no observations; `Some(Probability::ZERO)` one measured and
+        /// found dead.
+        score: Option<Probability>,
+        ack_rate: Option<Probability>,
     }
 
     impl EdgeNetworkObservableRead for StubImmediate {
@@ -436,7 +446,7 @@ mod tests {
     }
 
     impl EdgeImmediateProtocolObservable for StubImmediate {
-        fn ack_rate(&self) -> Option<f64> {
+        fn ack_rate(&self) -> Option<Probability> {
             self.ack_rate
         }
     }
@@ -450,7 +460,7 @@ mod tests {
             unreachable!("not used in value function tests")
         }
 
-        fn average_probe_rate(&self) -> Option<f64> {
+        fn average_probe_rate(&self) -> Option<Probability> {
             unreachable!("not used in value function tests")
         }
 
@@ -458,7 +468,7 @@ mod tests {
             self.score.is_some()
         }
 
-        fn score(&self) -> Option<f64> {
+        fn score(&self) -> Option<Probability> {
             self.score
         }
     }
@@ -476,8 +486,9 @@ mod tests {
     struct StubIntermediate {
         #[serde(serialize_with = "serialize_balance")]
         balance: Option<Balance>,
-        /// `None` models a stream with no observations; `Some(0.0)` one measured and found dead.
-        score: Option<f64>,
+        /// `None` models a stream with no observations; `Some(Probability::ZERO)` one measured and
+        /// found dead.
+        score: Option<Probability>,
     }
 
     impl EdgeProtocolObservable for StubIntermediate {
@@ -495,7 +506,7 @@ mod tests {
             unreachable!("not used in value function tests")
         }
 
-        fn average_probe_rate(&self) -> Option<f64> {
+        fn average_probe_rate(&self) -> Option<Probability> {
             unreachable!("not used in value function tests")
         }
 
@@ -503,7 +514,7 @@ mod tests {
             self.score.is_some()
         }
 
-        fn score(&self) -> Option<f64> {
+        fn score(&self) -> Option<Probability> {
             self.score
         }
     }
@@ -513,7 +524,7 @@ mod tests {
     struct Observations {
         immediate: Option<StubImmediate>,
         intermediate: Option<StubIntermediate>,
-        health: Option<f64>,
+        health: Option<Probability>,
     }
 
     impl EdgeObservableRead for Observations {
@@ -532,24 +543,24 @@ mod tests {
             self.intermediate.as_ref()
         }
 
-        fn score(&self) -> Option<f64> {
+        fn score(&self) -> Option<Probability> {
             let immediate = self.immediate.as_ref().and_then(|i| i.score);
             let intermediate = self.intermediate.as_ref().and_then(|i| i.score);
             match (immediate, intermediate) {
-                (Some(immediate), Some(intermediate)) => Some((immediate + intermediate) / 2.0),
+                (Some(immediate), Some(intermediate)) => Some(immediate.avg(intermediate)),
                 (Some(only), None) | (None, Some(only)) => Some(only),
                 (None, None) => None,
             }
         }
 
-        fn health(&self) -> Option<f64> {
+        fn health(&self) -> Option<Probability> {
             self.health
         }
     }
 
     impl Observations {
         /// Attaches a *connected* immediate stream.
-        fn with_immediate(mut self, score: Option<f64>, ack_rate: Option<f64>) -> Self {
+        fn with_immediate(mut self, score: Option<Probability>, ack_rate: Option<Probability>) -> Self {
             self.immediate = Some(StubImmediate {
                 connected: Some(true),
                 score,
@@ -559,7 +570,7 @@ mod tests {
         }
 
         /// Attaches an intermediate stream over a channel holding `balance`.
-        fn with_intermediate(mut self, balance: Option<u64>, score: Option<f64>) -> Self {
+        fn with_intermediate(mut self, balance: Option<u64>, score: Option<Probability>) -> Self {
             self.intermediate = Some(StubIntermediate {
                 balance: balance.map(Balance::from),
                 score,
@@ -603,13 +614,13 @@ mod tests {
     }
 
     /// Healthy over a funded channel, with the given ack rate.
-    fn acking(ack_rate: Option<f64>) -> Observations {
+    fn acking(ack_rate: Option<Probability>) -> Observations {
         healthy().with_immediate(Some(GOOD_SCORE), ack_rate)
     }
 
     /// Healthy on the wire, but measured and found dead when relaying.
     fn dead_intermediate() -> Observations {
-        healthy().with_intermediate(Some(FUNDED), Some(0.0))
+        healthy().with_intermediate(Some(FUNDED), Some(Probability::ZERO))
     }
 
     /// Fully connected and probed, over a channel holding exactly `balance`.
@@ -782,10 +793,16 @@ mod tests {
         3,
         0,
         1.0,
-        acking(Some(0.05))
+        acking(Some(probability(0.05)))
     )]
     #[case::forward_first_edge_no_ack_data("forward_first_edge_no_ack_data", 3, 0, 1.0, acking(None))]
-    #[case::forward_first_edge_zero_ack_rate("forward_first_edge_zero_ack_rate", 3, 0, 1.0, acking(Some(0.0)))]
+    #[case::forward_first_edge_zero_ack_rate(
+        "forward_first_edge_zero_ack_rate",
+        3,
+        0,
+        1.0,
+        acking(Some(Probability::ZERO))
+    )]
     #[case::forward_first_edge_negative_incoming_value("forward_first_edge_negative_incoming_value", 3, 0, -1.0, unobserved())]
     // Intermediate edges (0 < index < length - 1): need a funding balance.
     #[case::forward_intermediate_edge_healthy("forward_intermediate_edge_healthy", 3, 1, 1.0, healthy())]
@@ -846,7 +863,7 @@ mod tests {
         1,
         0,
         1.0,
-        acking(Some(0.05))
+        acking(Some(probability(0.05)))
     )]
     #[case::forward_two_edge_last_edge_healthy("forward_two_edge_last_edge_healthy", 2, 1, 1.0, healthy())]
     #[case::forward_two_edge_last_edge_unobserved("forward_two_edge_last_edge_unobserved", 2, 1, 1.0, unobserved())]
@@ -893,14 +910,14 @@ mod tests {
     // Last edge (relay -> me): requires immediate connectivity and applies the ack rate.
     #[case::returning_last_edge_connected("returning_last_edge_connected", 2, 1, 1.0, healthy())]
     #[case::returning_last_edge_not_connected("returning_last_edge_not_connected", 2, 1, 1.0, relayed_only())]
-    #[case::returning_last_edge_connected_over_a_dead_unfunded_intermediate("returning_last_edge_connected_over_a_dead_unfunded_intermediate", 2, 1, 1.0, healthy().with_intermediate(None, Some(0.0)))]
-    #[case::returning_last_edge_measured_dead_immediate("returning_last_edge_measured_dead_immediate", 2, 1, 1.0, Observations::default().with_immediate(Some(0.0), Some(GOOD_ACK)))]
+    #[case::returning_last_edge_connected_over_a_dead_unfunded_intermediate("returning_last_edge_connected_over_a_dead_unfunded_intermediate", 2, 1, 1.0, healthy().with_intermediate(None, Some(Probability::ZERO)))]
+    #[case::returning_last_edge_measured_dead_immediate("returning_last_edge_measured_dead_immediate", 2, 1, 1.0, Observations::default().with_immediate(Some(Probability::ZERO), Some(GOOD_ACK)))]
     #[case::returning_last_edge_ack_rate_below_threshold(
         "returning_last_edge_ack_rate_below_threshold",
         2,
         1,
         1.0,
-        acking(Some(0.05))
+        acking(Some(probability(0.05)))
     )]
     // Intermediate edges share the first edge's funding requirement.
     #[case::returning_intermediate_edge_balance_only(
@@ -933,7 +950,7 @@ mod tests {
         3,
         0,
         1.0,
-        acking(Some(0.05))
+        acking(Some(probability(0.05)))
     )]
     #[case::loopback_first_edge_healthy("loopback_first_edge_healthy", 3, 0, 1.0, healthy())]
     fn forward_without_self_loopback_should_value_an_edge_by_position_and_observations(
@@ -1012,7 +1029,7 @@ mod tests {
     #[case::forward_without_self_loopback(Direction::ForwardWithoutSelfLoopback)]
     fn an_edge_into_an_unusable_node_should_be_rejected(#[case] direction: Direction) -> anyhow::Result<()> {
         let dead = Observations {
-            health: Some(0.0),
+            health: Some(Probability::ZERO),
             ..healthy()
         };
         assert!(
@@ -1032,7 +1049,7 @@ mod tests {
     #[case::forward_without_self_loopback(Direction::ForwardWithoutSelfLoopback)]
     fn an_edge_into_a_degraded_node_should_be_scaled_by_its_health(#[case] direction: Direction) -> anyhow::Result<()> {
         let degraded = Observations {
-            health: Some(0.25),
+            health: Some(probability(0.25)),
             ..healthy()
         };
         let full = edge_value(direction, 3, 1, &healthy())?;
@@ -1047,7 +1064,7 @@ mod tests {
     #[case::returning(Direction::Returning)]
     fn the_edge_into_the_endpoint_should_ignore_relayer_health(#[case] direction: Direction) -> anyhow::Result<()> {
         let dead = Observations {
-            health: Some(0.0),
+            health: Some(Probability::ZERO),
             ..healthy()
         };
         assert_eq!(
@@ -1070,7 +1087,7 @@ mod tests {
                 3,
                 1,
                 &Observations {
-                    health: Some(1.0),
+                    health: Some(Probability::ONE),
                     ..healthy()
                 }
             )?
@@ -1081,8 +1098,8 @@ mod tests {
     #[rstest]
     fn a_rejected_edge_should_stay_rejected_whatever_the_health(
         #[values(Direction::Forward, Direction::Returning, Direction::ForwardWithoutSelfLoopback)] direction: Direction,
-        #[values(None, Some(0.0), Some(-0.0), Some(0.5), Some(1.0), Some(-12323.0), Some(f64::NAN), Some(f64::INFINITY))]
-        health: Option<f64>,
+        #[values(None, Some(Probability::ZERO), Some(probability(-0.0)), Some(probability(0.5)), Some(Probability::ONE))]
+        health: Option<Probability>,
     ) -> anyhow::Result<()> {
         let unfunded = Observations { health, ..unfunded() };
         assert!(edge_value(direction, 3, 1, &unfunded)? < 0.0, "health {health:?}");
@@ -1090,21 +1107,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case::rejected_dead(-12323.0, Some(0.0), -12323.0)]
-    #[case::rejected_negative_health(-12323.0, Some(-12323.0), -12323.0)]
-    #[case::rejected_healthy(-12323.0, Some(1.0), -12323.0)]
-    #[case::zero_dead(0.0, Some(0.0), 0.0)]
-    #[case::dead(10.0, Some(0.0), -10.0)]
-    #[case::negative_zero(10.0, Some(-0.0), -10.0)]
-    #[case::negative(10.0, Some(-12323.0), -10.0)]
-    #[case::negative_infinity(10.0, Some(f64::NEG_INFINITY), -10.0)]
-    #[case::degraded(10.0, Some(0.25), 2.5)]
-    #[case::healthy(10.0, Some(1.0), 10.0)]
-    #[case::above_one(10.0, Some(12323.0), 10.0)]
-    #[case::infinity(10.0, Some(f64::INFINITY), 10.0)]
-    #[case::nan(10.0, Some(f64::NAN), 10.0)]
+    #[case::rejected_dead(-12323.0, Some(Probability::ZERO), -12323.0)]
+    #[case::rejected_healthy(-12323.0, Some(Probability::ONE), -12323.0)]
+    #[case::zero_dead(0.0, Some(Probability::ZERO), 0.0)]
+    #[case::dead(10.0, Some(Probability::ZERO), -10.0)]
+    #[case::negative_zero(10.0, Some(probability(-0.0)), -10.0)]
+    #[case::degraded(10.0, Some(probability(0.25)), 2.5)]
+    #[case::healthy(10.0, Some(Probability::ONE), 10.0)]
     #[case::unjudged(10.0, None, 10.0)]
-    fn scale_by_health_should_handle_any_value(#[case] value: f64, #[case] health: Option<f64>, #[case] expected: f64) {
+    fn scale_by_health_should_scale_or_reject_by_the_validated_health(
+        #[case] value: f64,
+        #[case] health: Option<Probability>,
+        #[case] expected: f64,
+    ) {
         assert_eq!(scale_by_health(value, health), expected);
     }
 
@@ -1126,8 +1141,8 @@ mod tests {
         // Taking the better of the two streams would hide a dead intermediate entirely, which is
         // the defect the presence rules exist to close. RFC-0014 §4.2 averages when both are
         // present. Acks are fully accounted for here so the assertion isolates the aggregate.
-        let masking = dead_intermediate().with_immediate(Some(GOOD_SCORE), Some(1.0));
-        let sound = healthy().with_immediate(Some(GOOD_SCORE), Some(1.0));
+        let masking = dead_intermediate().with_immediate(Some(GOOD_SCORE), Some(Probability::ONE));
+        let sound = healthy().with_immediate(Some(GOOD_SCORE), Some(Probability::ONE));
 
         let masked = edge_value(Direction::Forward, 3, 0, &masking)?;
         let intact = edge_value(Direction::Forward, 3, 0, &sound)?;
@@ -1137,7 +1152,7 @@ mod tests {
             "a dead intermediate must cost the edge, not be hidden by a healthy immediate: {masked} vs {intact}"
         );
         assert!(
-            (masked - (GOOD_SCORE + 0.0) / 2.0).abs() < 1e-9,
+            (masked - GOOD_SCORE.avg(Probability::ZERO).get()).abs() < 1e-9,
             "expected the documented average, got {masked}"
         );
         Ok(())
@@ -1167,7 +1182,7 @@ mod tests {
     #[test]
     fn forward_first_edge_should_rank_a_higher_ack_rate_higher() -> anyhow::Result<()> {
         let generous = edge_value(Direction::Forward, 3, 0, &acking(Some(GOOD_ACK)))?;
-        let stingy = edge_value(Direction::Forward, 3, 0, &acking(Some(0.3)))?;
+        let stingy = edge_value(Direction::Forward, 3, 0, &acking(Some(probability(0.3))))?;
         assert!(
             generous > stingy,
             "a higher ack rate must produce a higher value: {generous} vs {stingy}"
@@ -1189,11 +1204,11 @@ mod tests {
 
     #[test]
     fn forward_should_rank_a_measured_dead_edge_below_a_barely_working_one() -> anyhow::Result<()> {
-        let relayed = |score: Option<f64>| Observations::default().with_intermediate(Some(FUNDED), score);
+        let relayed = |score: Option<Probability>| Observations::default().with_intermediate(Some(FUNDED), score);
 
         // Worst achievable positive score: one success in the window, slowest latency bucket.
-        let barely_working = edge_value(Direction::Forward, 3, 1, &relayed(Some(0.2 * 0.15)))?;
-        let measured_dead = edge_value(Direction::Forward, 3, 1, &relayed(Some(0.0)))?;
+        let barely_working = edge_value(Direction::Forward, 3, 1, &relayed(Some(probability(0.2 * 0.15))))?;
+        let measured_dead = edge_value(Direction::Forward, 3, 1, &relayed(Some(Probability::ZERO)))?;
         let never_probed = edge_value(Direction::Forward, 3, 1, &relayed(None))?;
 
         assert!(
@@ -1218,11 +1233,11 @@ mod tests {
             Direction::Forward,
             3,
             1,
-            &Observations::default().with_intermediate(Some(FUNDED), Some(0.0)),
+            &Observations::default().with_intermediate(Some(FUNDED), Some(Probability::ZERO)),
         )?;
         let sound = edge_value(Direction::Forward, 3, 1, &relayed_only())?;
 
-        // Both bounds are literal on purpose. Comparing against `MEASURED_DEAD_FLOOR` would move
+        // Both bounds are literal on purpose. Comparing against `measured_dead_floor` would move
         // with the constant and assert nothing about it.
         assert!(
             measured_dead > 0.0,
@@ -1370,10 +1385,27 @@ mod tests {
         // unobserved-edge penalty, which is also positive. Only a value carrying the intermediate
         // score shows the drained channel was accepted rather than merely tolerated.
         assert!(
-            value > TEST_PENALTY,
+            value > TEST_PENALTY.get(),
             "a drained final hop must be scored on its intermediate stream, not handed the exploration penalty: got \
-             {value}, penalty is {TEST_PENALTY}"
+             {value}, penalty is {}",
+            TEST_PENALTY.get()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_zero_penalty_should_starve_an_unobserved_edge_without_pruning_it() -> anyhow::Result<()> {
+        // `Probability::ZERO` is a valid penalty and the old clamp accepted it. The measured-dead
+        // floor must still apply, or the edge drops out of probe generation and can never recover.
+        let length = std::num::NonZeroUsize::new(3).context("path length must be non-zero")?;
+        let value = EdgeValueFn::<_, Observations>::forward(length, Probability::ZERO, Probability::ZERO, None)
+            .into_value_fn()(1.0, &balance_only(), 1);
+
+        assert!(
+            value > 0.0,
+            "a zero penalty must not prune an unobserved edge, got {value}"
+        );
+        assert!(value < 1e-6, "and the remaining value must stay minuscule, got {value}");
         Ok(())
     }
 
