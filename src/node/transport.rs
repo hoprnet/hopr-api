@@ -2,7 +2,7 @@
 //!
 //! This trait exposes only what cannot be obtained from the graph or network view.
 //! Session management is a separate concern handled at the hopr-lib level
-//! under the `session-client` feature.
+//! under the `node-session-entry` feature.
 
 use std::time::Duration;
 

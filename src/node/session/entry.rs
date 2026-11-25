@@ -1,6 +1,6 @@
-//! Session client operations for establishing HOPR sessions.
+//! Session entry operations for establishing HOPR sessions.
 //!
-//! Gated behind the `node-session-client` feature.
+//! Gated behind the `node-session-entry` feature.
 
 use futures::io::{AsyncRead, AsyncWrite};
 
@@ -13,7 +13,7 @@ use crate::Address;
 /// out of the API crate.
 #[async_trait::async_trait]
 #[auto_impl::auto_impl(&, Arc)]
-pub trait HoprSessionClientOperations: Send + Sync {
+pub trait HoprSessionEntryOperations: Send + Sync {
     /// An established session implementing async read/write.
     type Session: AsyncRead + AsyncWrite + Send + Unpin;
     /// Handle for controlling a session after creation (e.g. keep-alive, SURB config).
@@ -38,3 +38,12 @@ pub trait HoprSessionClientOperations: Send + Sync {
         config: Self::Config,
     ) -> Result<(Self::Session, Self::SessionConfigurator), Self::Error>;
 }
+
+/// Deprecated name of [`HoprSessionEntryOperations`].
+///
+/// This is the same trait under its old name, not a subtrait: code that names only the old trait
+/// still finds its methods and associated types, and can still implement it. Move to the new name
+/// when convenient; the alias stays for the 6.x line.
+///
+/// A `use` cannot carry `#[deprecated]`, so the compiler does not warn about this name.
+pub use self::HoprSessionEntryOperations as HoprSessionClientOperations;

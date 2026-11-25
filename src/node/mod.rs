@@ -21,7 +21,7 @@
 mod accessors;
 mod events;
 mod incentive;
-#[cfg(any(feature = "node-session-client", feature = "node-session-server"))]
+#[cfg(any(feature = "node-session-entry", feature = "node-session-exit"))]
 /// Session APIs for outgoing/incoming HOPR sessions.
 pub mod session;
 mod state;
@@ -32,10 +32,10 @@ mod types;
 pub use accessors::*;
 pub use events::*;
 pub use incentive::*;
-#[cfg(feature = "node-session-client")]
-pub use session::client::*;
-#[cfg(feature = "node-session-server")]
-pub use session::server::*;
+#[cfg(feature = "node-session-entry")]
+pub use session::entry::*;
+#[cfg(feature = "node-session-exit")]
+pub use session::exit::*;
 pub use state::*;
 pub use status::*;
 pub use transport::*;

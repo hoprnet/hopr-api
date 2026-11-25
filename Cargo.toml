@@ -1,6 +1,6 @@
 [package]
 name = "hopr-api"
-version = "6.1.1"
+version = "6.2.0"
 description = "Common high-level external and internal API traits used by hopr-lib to implement the HOPR protocol"
 authors = ["HOPR Association <tech@hoprnet.org>"]
 homepage = "https://hoprnet.org/"
@@ -22,6 +22,8 @@ full = [
   "graph",
   "node",
   "node-session-client",
+  "node-session-entry",
+  "node-session-exit",
   "node-session-server",
   "serde",
   "tickets",
@@ -43,8 +45,11 @@ node = [
   "dep:atomic_enum",
   "dep:auto_impl",
 ]
-node-session-client = ["node"]
-node-session-server = ["node", "hopr-types/network"]
+node-session-entry = ["node"]
+node-session-exit = ["node", "hopr-types/network"]
+# Deprecated aliases of the entry/exit features, kept so existing consumers keep building.
+node-session-client = ["node-session-entry"]
+node-session-server = ["node-session-exit"]
 serde = ["hopr-types/serde", "dep:serde", "dep:serde_bytes"]
 tickets = ["chain", "dep:auto_impl"]
 types-curvy = ["hopr-types/curvy"]
