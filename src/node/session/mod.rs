@@ -28,6 +28,7 @@ pub mod server {
 /// traits, finds their methods and associated types, and is accepted where the new names are expected.
 #[cfg(all(test, feature = "node-session-entry", feature = "node-session-exit"))]
 mod old_names {
+    use anyhow::Context;
     use futures::io::Cursor;
 
     use crate::node::{HoprSessionClientOperations, HoprSessionServer};
@@ -66,11 +67,14 @@ mod old_names {
     fn takes_new_entry<T: crate::node::HoprSessionEntryOperations>(_: &T) {}
 
     #[tokio::test]
-    async fn an_implementor_of_the_old_names_is_accepted_as_the_new_ones() {
+    async fn an_implementor_of_the_old_names_is_accepted_as_the_new_ones() -> anyhow::Result<()> {
         // Only the old names are imported, so `process` and `connect_to` resolve through them.
-        Old.process(1).await.expect("process");
-        Old.connect_to(Default::default(), (), ()).await.expect("connect");
+        Old.process(1).await.context("process through the old exit name")?;
+        Old.connect_to(Default::default(), (), ())
+            .await
+            .context("connect through the old entry name")?;
         takes_new_exit(&Old);
         takes_new_entry(&Old);
+        Ok(())
     }
 }
