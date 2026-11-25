@@ -190,13 +190,12 @@ pub trait HoprSessionExit {
 
 /// Deprecated name of [`HoprSessionExit`].
 ///
-/// Bounds written against this name keep working, because every [`HoprSessionExit`] implementor
-/// satisfies it. Implementors must implement the new trait instead.
-#[deprecated(note = "renamed to `HoprSessionExit`")]
-pub trait HoprSessionServer: HoprSessionExit {}
-
-#[allow(deprecated)]
-impl<T: HoprSessionExit + ?Sized> HoprSessionServer for T {}
+/// This is the same trait under its old name, not a subtrait: code that names only the old trait
+/// still finds `admit` and `process` and the associated types, and can still implement it. Move to
+/// the new name when convenient; the alias stays for the 6.x line.
+///
+/// A `use` cannot carry `#[deprecated]`, so the compiler does not warn about this name.
+pub use self::HoprSessionExit as HoprSessionServer;
 
 #[cfg(test)]
 mod tests {

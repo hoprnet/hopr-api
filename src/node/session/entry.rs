@@ -41,10 +41,9 @@ pub trait HoprSessionEntryOperations: Send + Sync {
 
 /// Deprecated name of [`HoprSessionEntryOperations`].
 ///
-/// Bounds written against this name keep working, because every [`HoprSessionEntryOperations`]
-/// implementor satisfies it. Implementors must implement the new trait instead.
-#[deprecated(note = "renamed to `HoprSessionEntryOperations`")]
-pub trait HoprSessionClientOperations: HoprSessionEntryOperations {}
-
-#[allow(deprecated)]
-impl<T: HoprSessionEntryOperations + ?Sized> HoprSessionClientOperations for T {}
+/// This is the same trait under its old name, not a subtrait: code that names only the old trait
+/// still finds its methods and associated types, and can still implement it. Move to the new name
+/// when convenient; the alias stays for the 6.x line.
+///
+/// A `use` cannot carry `#[deprecated]`, so the compiler does not warn about this name.
+pub use self::HoprSessionEntryOperations as HoprSessionClientOperations;
